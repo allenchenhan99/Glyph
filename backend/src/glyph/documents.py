@@ -1,0 +1,301 @@
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+from typing import Annotated
+from uuid import uuid4
+
+import shutil
+import subprocess
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session, sessionmaker
+
+from glyph.config import Settings
+from glyph.models import Block, Document, Section, Summary
+from glyph.pipeline import get_job, process_document
+from glyph.schemas import BlockOut, DocumentOut, JobOut, ReaderOut, SectionOut
+
+SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+
+router = APIRouter(prefix="/api", tags=["documents"])
+
+
+def get_settings(request: Request) -> Settings:
+    return request.app.state.settings
+
+
+def get_session_factory(request: Request) -> sessionmaker[Session]:
+    return request.app.state.session_factory
+
+
+def get_session(
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+):
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def compute_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def register_document(session: Session, source_path: Path, status: str | None = None) -> Document:
+    existing = session.scalar(select(Document).where(Document.source_path == str(source_path)))
+    content_hash = compute_hash(source_path)
+    if existing is not None:
+        existing.content_hash = content_hash
+        existing.title = source_path.name
+        existing.file_type = source_path.suffix.lower().lstrip(".")
+        if status is not None:
+            existing.status = status
+        return existing
+
+    document = Document(
+        id=str(uuid4()),
+        title=source_path.name,
+        source_path=str(source_path),
+        content_hash=content_hash,
+        file_type=source_path.suffix.lower().lstrip("."),
+        status=status or "discovered",
+    )
+    session.add(document)
+    return document
+
+
+def discover_book_documents(settings: Settings, session: Session) -> list[Document]:
+    settings.book_dir.mkdir(parents=True, exist_ok=True)
+    documents: list[Document] = []
+    for path in sorted(settings.book_dir.iterdir(), key=lambda item: item.name.lower()):
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
+            documents.append(register_document(session, path))
+    session.flush()
+    return documents
+
+
+def document_to_out(document: Document) -> DocumentOut:
+    return DocumentOut(
+        id=document.id,
+        title=document.title,
+        source_path=document.source_path,
+        file_type=document.file_type,
+        status=document.status,
+    )
+
+
+def job_to_out(job) -> JobOut:
+    return JobOut(
+        id=job.id,
+        document_id=job.document_id,
+        status=job.status,
+        stage=job.stage,
+        progress=job.progress,
+        error_message=job.error_message,
+    )
+
+
+def section_to_out(section: Section, total_blocks: int, section_block_count: int) -> SectionOut:
+    progress = 0 if total_blocks == 0 else round((section_block_count / total_blocks) * 100, 2)
+    return SectionOut(
+        id=section.id,
+        title=section.title,
+        path=section.path,
+        order_index=section.order_index,
+        summary=section.summary,
+        progress=progress,
+    )
+
+
+def load_reader_parts(session: Session, document_id: str):
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    sections = session.scalars(
+        select(Section).where(Section.document_id == document_id).order_by(Section.order_index)
+    ).all()
+    section_by_id = {section.id: section for section in sections}
+    blocks = session.scalars(
+        select(Block).where(Block.document_id == document_id).order_by(Block.order_index)
+    ).all()
+    summary = session.scalar(
+        select(Summary)
+        .where(Summary.document_id == document_id, Summary.section_id.is_(None))
+        .order_by(Summary.created_at.desc())
+    )
+    return document, sections, section_by_id, blocks, summary
+
+
+@router.get("/documents", response_model=list[DocumentOut])
+def list_documents(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+) -> list[DocumentOut]:
+    documents = discover_book_documents(settings, session)
+    return [document_to_out(document) for document in documents]
+
+
+@router.post("/documents/upload", response_model=DocumentOut)
+async def upload_document(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+    file: UploadFile = File(...),
+) -> DocumentOut:
+    filename = Path(file.filename or "").name
+    suffix = Path(filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {suffix or 'missing extension'}",
+        )
+
+    upload_dir = settings.data_dir / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = upload_dir / filename
+    target.write_bytes(await file.read())
+    document = register_document(session, target, status="uploaded")
+    session.flush()
+    return document_to_out(document)
+
+
+@router.post("/documents/{document_id}/process", response_model=JobOut)
+def process_document_route(
+    document_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+) -> JobOut:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    job = process_document(session, settings, document)
+    return job_to_out(job)
+
+
+@router.get("/jobs/{job_id}", response_model=JobOut)
+def get_job_route(
+    job_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> JobOut:
+    job = get_job(session, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job_to_out(job)
+
+
+@router.get("/documents/{document_id}/reader", response_model=ReaderOut)
+def get_reader(
+    document_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> ReaderOut:
+    document, sections, section_by_id, blocks, summary = load_reader_parts(session, document_id)
+    section_block_counts = {
+        section.id: sum(1 for block in blocks if block.section_id == section.id) for section in sections
+    }
+    return ReaderOut(
+        document=document_to_out(document),
+        blocks=[
+            BlockOut(
+                id=block.id,
+                order_index=block.order_index,
+                page_number=block.page_number,
+                block_type=block.block_type,
+                source_text=block.source_text,
+                translated_text=block.translated_text,
+                formula_latex=block.formula_latex,
+                page_image_url=f"/api/documents/{document.id}/pages/{block.page_number}/image",
+                section_path=section_by_id[block.section_id].path if block.section_id in section_by_id else None,
+                confidence=block.confidence,
+            )
+            for block in blocks
+        ],
+        sections=[
+            section_to_out(section, len(blocks), section_block_counts.get(section.id, 0))
+            for section in sections
+        ],
+        summary=summary.summary_text if summary is not None else "",
+    )
+
+
+@router.get("/documents/{document_id}/sections", response_model=list[SectionOut])
+def get_sections(
+    document_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> list[SectionOut]:
+    _, sections, _, blocks, _ = load_reader_parts(session, document_id)
+    section_block_counts = {
+        section.id: sum(1 for block in blocks if block.section_id == section.id) for section in sections
+    }
+    return [
+        section_to_out(section, len(blocks), section_block_counts.get(section.id, 0))
+        for section in sections
+    ]
+
+
+@router.get("/documents/{document_id}/summary")
+def get_summary(
+    document_id: str,
+    session: Annotated[Session, Depends(get_session)],
+) -> dict[str, str]:
+    _, _, _, _, summary = load_reader_parts(session, document_id)
+    return {"summary": summary.summary_text if summary is not None else ""}
+
+
+@router.get("/documents/{document_id}/pages/{page_number}/image")
+def get_page_image(
+    document_id: str,
+    page_number: int,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+) -> FileResponse:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    source_path = Path(document.source_path)
+    if document.file_type in {"png", "jpg", "jpeg"}:
+        return FileResponse(source_path)
+    if document.file_type != "pdf":
+        raise HTTPException(status_code=404, detail="Page image unavailable")
+    if shutil.which("pdftoppm") is None:
+        raise HTTPException(status_code=503, detail="pdftoppm is required for page images")
+
+    page_dir = settings.data_dir / "page-images" / document.id
+    page_dir.mkdir(parents=True, exist_ok=True)
+    output_prefix = page_dir / f"page-{page_number:04d}"
+    image_path = output_prefix.with_suffix(".png")
+    if not image_path.exists():
+        completed = subprocess.run(
+            [
+                "pdftoppm",
+                "-f",
+                str(page_number),
+                "-l",
+                str(page_number),
+                "-singlefile",
+                "-png",
+                "-r",
+                "144",
+                str(source_path),
+                str(output_prefix),
+            ],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        if completed.returncode != 0 or not image_path.exists():
+            raise HTTPException(
+                status_code=500,
+                detail=completed.stderr.strip() or "Could not render page image",
+            )
+    return FileResponse(image_path, media_type="image/png")

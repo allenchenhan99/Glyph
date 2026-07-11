@@ -1,0 +1,32 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# Local configuration and CLI project state
+.env
+.env.*
+!.env.example
+.envrc
+.claude/
+.codex/
+*.local
+*.log
+
+# User documents and generated runtime state
+data/
+book/*
+!book/.gitkeep
+*.sqlite
+*.sqlite3
+*.db
+
+# Optional local third-party checkouts
+third_party/
+Unlimited-OCR/
