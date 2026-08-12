@@ -186,6 +186,7 @@ describe('researchMapReducer', () => {
     expect(state.mode).toBe('map')
     expect(state.readerFocusBlockId).toBeNull()
     expect(state.map?.nodes[0].review?.id).toBe('server-review')
+    expect(state.map?.reviewed_core_nodes).toBe(1)
   })
 })
 

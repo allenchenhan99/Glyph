@@ -2,7 +2,16 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
-import { ApiError, getReader, listDocuments, processDocument, uploadDocument } from './api'
+import {
+  ApiError,
+  getActiveResearchMap,
+  getReader,
+  listDocuments,
+  processDocument,
+  reviewResearchNode,
+  uploadDocument
+} from './api'
+import { researchMapFixture } from './researchMapTestData'
 import type { ReaderPayload } from './types'
 
 vi.mock('./api', async (importOriginal) => {
@@ -12,7 +21,9 @@ vi.mock('./api', async (importOriginal) => {
     listDocuments: vi.fn(),
     processDocument: vi.fn(),
     uploadDocument: vi.fn(),
-    getReader: vi.fn()
+    getReader: vi.fn(),
+    getActiveResearchMap: vi.fn(),
+    reviewResearchNode: vi.fn()
   }
 })
 
@@ -20,6 +31,8 @@ const mockedListDocuments = vi.mocked(listDocuments)
 const mockedGetReader = vi.mocked(getReader)
 const mockedProcessDocument = vi.mocked(processDocument)
 const mockedUploadDocument = vi.mocked(uploadDocument)
+const mockedGetActiveResearchMap = vi.mocked(getActiveResearchMap)
+const mockedReviewResearchNode = vi.mocked(reviewResearchNode)
 
 const readerPayload: ReaderPayload = {
   document: {
@@ -67,6 +80,7 @@ describe('App', () => {
       }
     ])
     mockedGetReader.mockResolvedValue(readerPayload)
+    mockedGetActiveResearchMap.mockResolvedValue(researchMapFixture)
     mockedProcessDocument.mockResolvedValue({
       id: 'job-1',
       document_id: 'doc-1',
@@ -75,6 +89,41 @@ describe('App', () => {
       progress: 100,
       error_message: null
     })
+  })
+
+  it('opens the Research Map as the default research action when available', async () => {
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+
+    expect(await screen.findByLabelText('Research Map workspace')).toBeInTheDocument()
+    expect(mockedGetActiveResearchMap).toHaveBeenCalledWith('doc-1')
+    expect(mockedGetReader).not.toHaveBeenCalled()
+  })
+
+  it('offers generation when a completed Reader has no active Research Map', async () => {
+    mockedGetActiveResearchMap.mockRejectedValue(new ApiError(404, 'Research Map not found'))
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+
+    expect(await screen.findByRole('button', { name: 'Generate Research Map' })).toBeInTheDocument()
+    expect(screen.getByText(/configured local provider/i)).toBeInTheDocument()
+  })
+
+  it('rolls back a conflicting review and announces how to recover', async () => {
+    mockedReviewResearchNode.mockRejectedValue(
+      new ApiError(409, 'The claim changed after this map was loaded.')
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm claim' }))
+
+    const conflict = await screen.findByText(
+      'The claim changed after this map was loaded. Reload the Research Map and review it again.'
+    )
+    expect(conflict).toHaveAttribute('role', 'alert')
+    expect(screen.getAllByText('AI draft claim 0').length).toBeGreaterThan(0)
   })
 
   it('shows discovered documents from the book folder', async () => {
@@ -88,7 +137,7 @@ describe('App', () => {
     render(<App />)
 
     const library = await screen.findByRole('region', { name: 'Reading workspace' })
-    fireEvent.click(await screen.findByRole('button', { name: 'Open sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Full Reader for sample.pdf' }))
 
     expect(await screen.findByLabelText('Reader for sample.pdf')).toBeInTheDocument()
     expect(library).toHaveClass('library-panel-compact')

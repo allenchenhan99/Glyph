@@ -46,8 +46,11 @@ export const initialResearchMapState: ResearchMapState = {
 }
 
 export type ResearchMapAction =
+  | { type: 'resetWorkspace' }
   | { type: 'mapLoading' }
   | { type: 'mapLoaded'; map: ResearchMap }
+  | { type: 'mapAbsent' }
+  | { type: 'mapFailed'; message: string }
   | { type: 'jobUpdated'; job: ResearchMapJob }
   | { type: 'selectNode'; nodeId: string }
   | { type: 'openInspector' }
@@ -65,6 +68,8 @@ export function researchMapReducer(
   action: ResearchMapAction
 ): ResearchMapState {
   switch (action.type) {
+    case 'resetWorkspace':
+      return initialResearchMapState
     case 'mapLoading':
       return { ...state, loadStatus: 'loading', notice: null }
     case 'mapLoaded':
@@ -74,11 +79,29 @@ export function researchMapReducer(
         loadStatus: 'ready',
         map: action.map,
         selectedNodeId: state.selectedNodeId ?? action.map.nodes[0]?.id ?? null,
+        inspectorOpen: true,
         mapWarnings: {
           partial: action.map.status === 'partial',
           stale: action.map.is_stale
         },
         notice: null
+      }
+    case 'mapAbsent':
+      return {
+        ...state,
+        mode: 'map',
+        loadStatus: 'ready',
+        map: null,
+        selectedNodeId: null,
+        inspectorOpen: false,
+        mapWarnings: { partial: false, stale: false },
+        notice: null
+      }
+    case 'mapFailed':
+      return {
+        ...state,
+        loadStatus: 'error',
+        notice: { kind: 'error', message: action.message }
       }
     case 'jobUpdated': {
       const terminal = action.job.status === 'completed' || action.job.status === 'failed'
@@ -119,14 +142,28 @@ export function researchMapReducer(
       }
     }
     case 'reviewSaved':
-      return state.map
-        ? {
-            ...state,
-            map: replaceNode(state.map, action.nodeId, action.review),
-            pendingReview: null,
-            notice: { kind: 'status', message: 'Review saved.' }
-          }
-        : state
+      if (!state.map) return state
+      {
+        const isFirstCoreReview =
+          state.pendingReview?.nodeId === action.nodeId &&
+          state.pendingReview.previousNode.review === null &&
+          coreReviewNodeTypes.has(state.pendingReview.previousNode.node_type)
+        const reviewedMap = replaceNode(state.map, action.nodeId, action.review)
+        return {
+          ...state,
+          map: {
+            ...reviewedMap,
+            reviewed_core_nodes: isFirstCoreReview
+              ? Math.min(
+                  reviewedMap.reviewable_core_nodes,
+                  reviewedMap.reviewed_core_nodes + 1
+                )
+              : reviewedMap.reviewed_core_nodes
+          },
+          pendingReview: null,
+          notice: { kind: 'status', message: 'Review saved.' }
+        }
+      }
     case 'reviewConflict': {
       if (!state.map || !state.pendingReview) {
         return { ...state, pendingReview: null, notice: { kind: 'error', message: action.message } }
@@ -147,6 +184,27 @@ export function researchMapReducer(
       return { ...state, mode: 'map', readerFocusBlockId: null }
   }
 }
+
+const coreReviewNodeTypes = new Set<ResearchNode['node_type']>([
+  'author_claim',
+  'hypothesis',
+  'data_and_sample',
+  'data_source',
+  'sample_filter',
+  'signal_definition',
+  'variable_definition',
+  'portfolio_construction',
+  'rebalancing_rule',
+  'empirical_method',
+  'benchmark_model',
+  'identification_strategy',
+  'primary_result',
+  'statistical_evidence',
+  'economic_magnitude',
+  'limitations',
+  'implementation_constraint',
+  'alternative_explanation'
+])
 
 function replaceNode(
   map: ResearchMap,
