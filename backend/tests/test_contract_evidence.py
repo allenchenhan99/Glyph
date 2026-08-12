@@ -325,7 +325,9 @@ def test_contract_anchor_requires_context_map_to_match_document_and_source(
         research_map_version_id="map-foreign",
     )
 
-    with pytest.raises(module.InvalidContractEvidenceError, match="document and source"):
+    with pytest.raises(
+        module.InvalidContractEvidenceError, match="document and source"
+    ):
         module.validate_contract_candidate(session, wrong_context, candidate())
 
 

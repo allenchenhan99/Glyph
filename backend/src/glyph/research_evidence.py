@@ -153,9 +153,7 @@ def resolve_exact_quote(
             )
         first_match = source_text.find(quote_text)
         if first_match == -1:
-            raise ExactQuoteError(
-                "Evidence quote does not occur in the target block"
-            )
+            raise ExactQuoteError("Evidence quote does not occur in the target block")
         if source_text.find(quote_text, first_match + 1) != -1:
             raise ExactQuoteError(
                 "Evidence quote occurs more than once; explicit offsets are required"

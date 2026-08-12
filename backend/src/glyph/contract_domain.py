@@ -49,9 +49,7 @@ ContractItemType = Literal[
     "lookahead_risk",
     "implementation_constraint",
 ]
-ContractOrigin = Literal[
-    "author_explicit", "derived", "human_decision", "missing"
-]
+ContractOrigin = Literal["author_explicit", "derived", "human_decision", "missing"]
 ContractGenerationStatus = Literal["building", "complete", "partial", "failed"]
 ContractReadiness = Literal["blocked", "review_needed", "implementation_ready"]
 ResolutionStatus = Literal[
@@ -296,18 +294,14 @@ class ContractItemDraft:
         validate_contract_section(self.section)
         validate_contract_item_type(self.item_type)
         validate_contract_origin(self.origin)
-        if self.value is not None and not isinstance(
-            self.value, _CONTRACT_VALUE_TYPES
-        ):
+        if self.value is not None and not isinstance(self.value, _CONTRACT_VALUE_TYPES):
             raise InvalidContractValueError("Item value is not a ContractValue")
         if self.value is not None:
             encode_contract_value(self.value)
         if self.origin == "missing" and self.value is not None:
             raise InvalidContractValueError("A missing item must not have a value")
         if self.origin != "missing" and self.value is None:
-            raise InvalidContractValueError(
-                f"A {self.origin} item requires a value"
-            )
+            raise InvalidContractValueError(f"A {self.origin} item requires a value")
         if self.origin == "human_decision":
             raise InvalidContractValueError(
                 "A provider draft cannot claim a human_decision origin"
@@ -326,9 +320,7 @@ class ContractResolutionDraft:
 
     def __post_init__(self) -> None:
         validate_resolution_status(self.status)
-        if self.value is not None and not isinstance(
-            self.value, _CONTRACT_VALUE_TYPES
-        ):
+        if self.value is not None and not isinstance(self.value, _CONTRACT_VALUE_TYPES):
             raise InvalidContractValueError("Resolution value is not a ContractValue")
         normalized_reason = self.reason.strip() if self.reason else None
         if normalized_reason is not None:
@@ -568,7 +560,9 @@ def _validate_payload_size(payload: object) -> None:
     try:
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError) as exc:
-        raise InvalidContractValueError("Contract value is not JSON serializable") from exc
+        raise InvalidContractValueError(
+            "Contract value is not JSON serializable"
+        ) from exc
     if len(encoded.encode("utf-8")) > MAX_VALUE_BYTES:
         raise InvalidContractValueError("Contract value is too large")
 
@@ -594,7 +588,9 @@ def _require_keys(
         )
 
 
-def _required_text(value: object, field_name: str, *, max_length: int = MAX_TEXT_LENGTH) -> str:
+def _required_text(
+    value: object, field_name: str, *, max_length: int = MAX_TEXT_LENGTH
+) -> str:
     if not isinstance(value, str):
         raise InvalidContractValueError(f"{field_name} must be text")
     _validate_safe_text(field_name, value, max_length=max_length)

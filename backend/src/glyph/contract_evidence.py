@@ -136,7 +136,9 @@ def validate_contract_candidate(
     if candidate.research_node_id is not None:
         node = session.get(ResearchNode, candidate.research_node_id)
         if node is None:
-            raise InvalidContractEvidenceError("Linked Research Map node does not exist")
+            raise InvalidContractEvidenceError(
+                "Linked Research Map node does not exist"
+            )
         if node.map_version_id != context.research_map_version_id:
             raise InvalidContractEvidenceError(
                 "Linked node must belong to the same Research Map"

@@ -373,7 +373,11 @@ def test_benchmark_must_match_the_evaluation_metric(
     audit = module.audit_contract(items)
     codes = {issue.code for issue in audit.issues}
 
-    assert (issue_code in codes) if issue_code else audit.readiness == "implementation_ready"
+    assert (
+        (issue_code in codes)
+        if issue_code
+        else audit.readiness == "implementation_ready"
+    )
 
 
 def test_questioned_blocking_item_cannot_be_ready():
@@ -429,9 +433,7 @@ def test_human_decision_requires_a_typed_value_and_reason():
 
     assert audit.readiness == "implementation_ready"
     assert audit.items[0].effective_origin == "human_decision"
-    assert audit.items[0].effective_value == ScalarValue(
-        "scalar", "equal_weight", None
-    )
+    assert audit.items[0].effective_value == ScalarValue("scalar", "equal_weight", None)
 
 
 def test_audit_output_is_stable_under_input_ordering():
@@ -454,6 +456,8 @@ def test_audit_output_is_stable_under_input_ordering():
     reverse = module.audit_contract((unsupported, missing_cost))
 
     assert forward == reverse
-    assert [(issue.severity, issue.code, issue.item_key) for issue in forward.issues] == sorted(
+    assert [
+        (issue.severity, issue.code, issue.item_key) for issue in forward.issues
+    ] == sorted(
         (issue.severity, issue.code, issue.item_key) for issue in forward.issues
     )

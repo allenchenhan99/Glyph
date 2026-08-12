@@ -471,7 +471,9 @@ class ImplementationContractEvidence(Base):
         ForeignKey("implementation_contract_items.id"), nullable=False
     )
     block_id: Mapped[str] = mapped_column(ForeignKey("blocks.id"), nullable=False)
-    research_node_id: Mapped[str | None] = mapped_column(ForeignKey("research_nodes.id"))
+    research_node_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_nodes.id")
+    )
     locator_type: Mapped[str] = mapped_column(String(32), nullable=False)
     quote_text: Mapped[str] = mapped_column(Text, nullable=False)
     quote_start: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -481,7 +483,9 @@ class ImplementationContractEvidence(Base):
     source_label: Mapped[str | None] = mapped_column(String(512))
 
     item: Mapped[ImplementationContractItem] = relationship(back_populates="evidence")
-    block: Mapped[Block] = relationship(back_populates="implementation_contract_evidence")
+    block: Mapped[Block] = relationship(
+        back_populates="implementation_contract_evidence"
+    )
     research_node: Mapped[ResearchNode | None] = relationship(
         back_populates="implementation_contract_evidence"
     )
@@ -492,7 +496,9 @@ class ImplementationContractResolution(Base):
     __table_args__ = (
         UniqueConstraint("item_id", "revision_number"),
         UniqueConstraint("item_id", "request_id"),
-        Index("ix_implementation_contract_resolutions_item_time", "item_id", "resolved_at"),
+        Index(
+            "ix_implementation_contract_resolutions_item_time", "item_id", "resolved_at"
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
@@ -518,8 +524,8 @@ class ImplementationContractResolution(Base):
     item: Mapped[ImplementationContractItem] = relationship(
         back_populates="resolutions", foreign_keys=[item_id]
     )
-    supersedes_resolution: Mapped[ImplementationContractResolution | None] = relationship(
-        remote_side=[id], foreign_keys=[supersedes_resolution_id]
+    supersedes_resolution: Mapped[ImplementationContractResolution | None] = (
+        relationship(remote_side=[id], foreign_keys=[supersedes_resolution_id])
     )
     based_on_contract_version: Mapped[ImplementationContractVersion] = relationship(
         back_populates="resolutions", foreign_keys=[based_on_contract_version_id]
@@ -554,7 +560,9 @@ class ImplementationContractIssue(Base):
 class ImplementationContractJob(Base):
     __tablename__ = "implementation_contract_jobs"
     __table_args__ = (
-        Index("ix_implementation_contract_jobs_document_status", "document_id", "status"),
+        Index(
+            "ix_implementation_contract_jobs_document_status", "document_id", "status"
+        ),
         Index(
             "uq_implementation_contract_active_job",
             "document_id",

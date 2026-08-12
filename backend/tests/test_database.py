@@ -261,7 +261,9 @@ def create_revision_0003_database(settings: Settings) -> dict[str, tuple[tuple, 
     )
 
 
-def snapshot_tables(engine, table_names: tuple[str, ...]) -> dict[str, tuple[tuple, ...]]:
+def snapshot_tables(
+    engine, table_names: tuple[str, ...]
+) -> dict[str, tuple[tuple, ...]]:
     with engine.connect() as connection:
         return {
             table_name: tuple(

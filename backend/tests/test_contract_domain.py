@@ -116,9 +116,12 @@ def test_scalar_value_has_canonical_json_and_round_trips():
     assert contract_domain.encode_contract_value(value) == (
         '{"kind":"scalar","unit":"percent","value":1.25}'
     )
-    assert contract_domain.decode_contract_value(
-        json.loads(contract_domain.encode_contract_value(value))
-    ) == value
+    assert (
+        contract_domain.decode_contract_value(
+            json.loads(contract_domain.encode_contract_value(value))
+        )
+        == value
+    )
 
 
 def test_all_typed_values_round_trip_without_shape_loss():
@@ -226,7 +229,9 @@ def test_directly_constructed_values_cannot_bypass_canonical_validation():
         contract_domain.encode_contract_value(
             contract_domain.ScalarValue("scalar", "https://example.com", None)
         )
-    with pytest.raises(contract_domain.InvalidContractValueError, match="positive integer"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="positive integer"
+    ):
         contract_domain.encode_contract_value(
             contract_domain.PeriodValue("period", 0, "month", None)
         )
@@ -248,7 +253,9 @@ def test_missing_item_has_no_value_and_nonmissing_item_requires_one():
     )
     assert missing.value is None
 
-    with pytest.raises(contract_domain.InvalidContractValueError, match="must not have"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="must not have"
+    ):
         contract_domain.ContractItemDraft(
             item_key="transaction_cost.1",
             section="frictions_and_risks",
@@ -260,7 +267,9 @@ def test_missing_item_has_no_value_and_nonmissing_item_requires_one():
             is_optional=False,
             display_order=0,
         )
-    with pytest.raises(contract_domain.InvalidContractValueError, match="requires a value"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="requires a value"
+    ):
         contract_domain.ContractItemDraft(
             item_key="holding_period.1",
             section="portfolio_construction",
@@ -277,7 +286,9 @@ def test_missing_item_has_no_value_and_nonmissing_item_requires_one():
 def test_provider_draft_cannot_claim_a_human_decision():
     contract_domain = domain()
 
-    with pytest.raises(contract_domain.InvalidContractValueError, match="provider draft"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="provider draft"
+    ):
         contract_domain.ContractItemDraft(
             item_key="weighting_rule.1",
             section="portfolio_construction",
@@ -295,7 +306,9 @@ def test_provider_draft_cannot_claim_a_human_decision():
 def test_corrected_and_decided_resolutions_require_value_and_reason(status):
     contract_domain = domain()
 
-    with pytest.raises(contract_domain.InvalidContractValueError, match="value and reason"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="value and reason"
+    ):
         contract_domain.ContractResolutionDraft(
             status=status,
             value=None,
@@ -310,7 +323,9 @@ def test_not_applicable_resolution_requires_reason_and_forbids_value():
         contract_domain.ContractResolutionDraft(
             status="not_applicable", value=None, reason=None
         )
-    with pytest.raises(contract_domain.InvalidContractValueError, match="must not have"):
+    with pytest.raises(
+        contract_domain.InvalidContractValueError, match="must not have"
+    ):
         contract_domain.ContractResolutionDraft(
             status="not_applicable",
             value=contract_domain.ScalarValue("scalar", 0, None),

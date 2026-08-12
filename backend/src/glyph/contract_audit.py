@@ -228,10 +228,14 @@ def _audit_formation_availability(
     if not isinstance(formation_value, PeriodValue) or not isinstance(
         availability_value, PeriodValue
     ):
-        _temporal_review(issues, formation, "Formation and availability must be periods.")
+        _temporal_review(
+            issues, formation, "Formation and availability must be periods."
+        )
         return
     if formation_value.anchor != availability_value.anchor:
-        _temporal_review(issues, formation, "Formation and availability anchors differ.")
+        _temporal_review(
+            issues, formation, "Formation and availability anchors differ."
+        )
         return
     comparison = _compare_periods(formation_value, availability_value)
     if comparison is None:
@@ -263,7 +267,9 @@ def _audit_holding_rebalance(
     if not isinstance(holding_value, PeriodValue) or not isinstance(
         rebalance_value, PeriodValue
     ):
-        _temporal_review(issues, holding, "Holding and rebalance values must be periods.")
+        _temporal_review(
+            issues, holding, "Holding and rebalance values must be periods."
+        )
         return
     comparison = _compare_periods(holding_value, rebalance_value)
     if comparison is None:
