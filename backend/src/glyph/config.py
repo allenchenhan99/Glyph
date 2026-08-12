@@ -21,6 +21,7 @@ class Settings:
     max_upload_bytes: int = 50 * 1024 * 1024
     ocr_timeout_seconds: int = 300
     page_render_timeout_seconds: int = 30
+    research_job_max_attempts: int = 2
 
 
 def positive_int_from_env(name: str, default: int) -> int:
@@ -61,5 +62,8 @@ def get_settings() -> Settings:
         ocr_timeout_seconds=positive_int_from_env("GLYPH_OCR_TIMEOUT_SECONDS", 300),
         page_render_timeout_seconds=positive_int_from_env(
             "GLYPH_PAGE_RENDER_TIMEOUT_SECONDS", 30
+        ),
+        research_job_max_attempts=positive_int_from_env(
+            "GLYPH_RESEARCH_JOB_MAX_ATTEMPTS", 2
         ),
     )

@@ -8,6 +8,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from glyph.config import Settings
 from glyph.models import Block, Document
 from glyph.research_domain import (
     EvidenceQuality,
@@ -176,7 +177,7 @@ _TITLES_BY_NODE_TYPE = {rule.node_type: rule.title for rule in _MOCK_RULES}
 
 class MockResearchMapProvider:
     name = "mock"
-    model_name = None
+    model_name: str | None = None
 
     def extract_candidates(
         self, blocks: Sequence[ResearchBlock]
@@ -226,6 +227,14 @@ class MockResearchMapProvider:
                 )
             )
         return tuple(nodes)
+
+
+def create_research_map_provider(settings: Settings) -> ResearchMapProvider:
+    if settings.ai_mode == "mock":
+        return MockResearchMapProvider()
+    raise RuntimeError(
+        f"Research Map provider is not available for AI mode: {settings.ai_mode}"
+    )
 
 
 def validate_extracted_candidates(
