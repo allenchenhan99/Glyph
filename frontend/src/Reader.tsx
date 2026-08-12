@@ -20,6 +20,7 @@ type ReaderProps = {
   onReturnToMap?: () => void
   onReturn?: () => void
   returnLabel?: string
+  citationSource?: 'Map' | 'Contract'
 }
 
 export function Reader({
@@ -28,7 +29,8 @@ export function Reader({
   citingNodes = [],
   onReturnToMap,
   onReturn,
-  returnLabel = 'Research Map'
+  returnLabel = 'Research Map',
+  citationSource
 }: ReaderProps) {
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null)
   const returnAction = onReturn ?? onReturnToMap
@@ -107,6 +109,7 @@ export function Reader({
               hovered={hoveredBlockId === block.id}
               focused={focusBlockId === block.id}
               citingNodes={focusBlockId === block.id ? citingNodes : []}
+              citationSource={citationSource}
               key={block.id}
               onHover={setHoveredBlockId}
             />
@@ -122,10 +125,11 @@ type ReaderRowProps = {
   hovered: boolean
   focused: boolean
   citingNodes: Array<{ id: string; title: string }>
+  citationSource?: 'Map' | 'Contract'
   onHover: (blockId: string | null) => void
 }
 
-function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowProps) {
+function ReaderRow({ block, hovered, focused, citingNodes, citationSource, onHover }: ReaderRowProps) {
   return (
     <article
       className="block-grid reader-row"
@@ -140,7 +144,7 @@ function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowP
       onMouseLeave={() => onHover(null)}
     >
       <div className="source-cell">
-        {citingNodes.length ? <CitationBadges nodes={citingNodes} /> : null}
+        {citingNodes.length ? <CitationBadges nodes={citingNodes} source={citationSource} /> : null}
         <BlockMeta block={block} />
         <BlockContent block={block} side="source" />
       </div>
@@ -152,10 +156,20 @@ function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowP
   )
 }
 
-function CitationBadges({ nodes }: { nodes: Array<{ id: string; title: string }> }) {
+function CitationBadges({
+  nodes,
+  source
+}: {
+  nodes: Array<{ id: string; title: string }>
+  source?: 'Map' | 'Contract'
+}) {
   return (
-    <div className="citation-badges" aria-label="Research Map citations">
-      {nodes.map((node) => <span key={node.id}>Cited by {node.title}</span>)}
+    <div className="citation-badges" aria-label={`${source ?? 'Research Map'} citations`}>
+      {nodes.map((node) => (
+        <span key={node.id}>
+          {source ? `${source} citation · ` : 'Cited by '}{node.title}
+        </span>
+      ))}
     </div>
   )
 }

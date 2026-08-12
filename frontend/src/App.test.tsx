@@ -4,12 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import {
   ApiError,
+  activateImplementationContract,
   enqueueImplementationContract,
   getActiveImplementationContract,
   getActiveResearchMap,
   getImplementationContractJob,
+  getImplementationContractDiff,
+  getImplementationContractExport,
+  getImplementationContractVersion,
   getReader,
   listDocuments,
+  listImplementationContractVersions,
   processDocument,
   resolveImplementationContractItem,
   reviewResearchNode,
@@ -18,7 +23,8 @@ import {
 import {
   implementationContract,
   implementationContractJob,
-  implementationContractSummary
+  implementationContractSummary,
+  implementationContractVersion
 } from './implementationContractTestData'
 import { researchMapFixture } from './researchMapTestData'
 import type { ReaderPayload } from './types'
@@ -35,6 +41,11 @@ vi.mock('./api', async (importOriginal) => {
     enqueueImplementationContract: vi.fn(),
     getImplementationContractJob: vi.fn(),
     getActiveImplementationContract: vi.fn(),
+    getImplementationContractVersion: vi.fn(),
+    listImplementationContractVersions: vi.fn(),
+    getImplementationContractDiff: vi.fn(),
+    activateImplementationContract: vi.fn(),
+    getImplementationContractExport: vi.fn(),
     resolveImplementationContractItem: vi.fn(),
     reviewResearchNode: vi.fn()
   }
@@ -48,6 +59,11 @@ const mockedGetActiveResearchMap = vi.mocked(getActiveResearchMap)
 const mockedEnqueueImplementationContract = vi.mocked(enqueueImplementationContract)
 const mockedGetImplementationContractJob = vi.mocked(getImplementationContractJob)
 const mockedGetActiveImplementationContract = vi.mocked(getActiveImplementationContract)
+const mockedGetImplementationContractVersion = vi.mocked(getImplementationContractVersion)
+const mockedListImplementationContractVersions = vi.mocked(listImplementationContractVersions)
+const mockedGetImplementationContractDiff = vi.mocked(getImplementationContractDiff)
+const mockedActivateImplementationContract = vi.mocked(activateImplementationContract)
+const mockedGetImplementationContractExport = vi.mocked(getImplementationContractExport)
 const mockedResolveImplementationContractItem = vi.mocked(resolveImplementationContractItem)
 const mockedReviewResearchNode = vi.mocked(reviewResearchNode)
 
@@ -107,6 +123,19 @@ describe('App', () => {
       progress: 100
     })
     mockedGetActiveImplementationContract.mockResolvedValue(implementationContract)
+    mockedGetImplementationContractVersion.mockResolvedValue(implementationContract)
+    mockedListImplementationContractVersions.mockResolvedValue([])
+    mockedGetImplementationContractDiff.mockResolvedValue({
+      version_id: 'contract-1',
+      against_version_id: 'contract-0',
+      items: []
+    })
+    mockedActivateImplementationContract.mockResolvedValue(implementationContract)
+    mockedGetImplementationContractExport.mockResolvedValue({
+      blob: new Blob(['{}']),
+      filename: 'implementation-contract-contract-1.en.json',
+      content_type: 'application/json'
+    })
     mockedProcessDocument.mockResolvedValue({
       id: 'job-1',
       document_id: 'doc-1',
@@ -214,7 +243,7 @@ describe('App', () => {
 
     const focused = await screen.findByTestId('reader-row-block-0')
     expect(focused).toHaveFocus()
-    expect(focused).toHaveTextContent('Cited by Research question')
+    expect(focused).toHaveTextContent('Map citation · Research question')
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
     expect(await screen.findByLabelText('Evidence Inspector for Research question')).toBeInTheDocument()
@@ -259,7 +288,7 @@ describe('App', () => {
 
     expect(await screen.findByLabelText('Reader for second.pdf')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Return to Research Map' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Cited by Research question')).not.toBeInTheDocument()
+    expect(screen.queryByText('Map citation · Research question')).not.toBeInTheDocument()
   })
 
   it('shows verification, evidence gaps, and freshness in Library rows', async () => {
@@ -369,11 +398,15 @@ describe('App', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('enqueues from the explicit Map version, loads completion, and refreshes Library', async () => {
+  it('moves from Map to Contract to exact Reader evidence and refreshes Library', async () => {
     mockedGetActiveResearchMap.mockResolvedValue({
       ...researchMapFixture,
       is_current: true,
       is_stale: false
+    })
+    mockedGetReader.mockResolvedValue({
+      ...readerPayload,
+      blocks: [{ ...readerPayload.blocks[0], id: 'block-1' }]
     })
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
@@ -388,6 +421,11 @@ describe('App', () => {
     expect(mockedGetImplementationContractJob).toHaveBeenCalledWith('contract-job-1')
     expect(mockedGetActiveImplementationContract).toHaveBeenCalledWith('doc-1')
     await waitFor(() => expect(mockedListDocuments).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open evidence E01 in Reader' }))
+    const focused = await screen.findByTestId('reader-row-block-1')
+    expect(focused).toHaveFocus()
+    expect(focused).toHaveTextContent('Contract citation · signal direction')
   })
 
   it('opens exact Contract evidence in Reader and returns to the preserved Contract item', async () => {
@@ -456,6 +494,128 @@ describe('App', () => {
       })
     )
     expect(screen.getByRole('group', { name: 'Resolve missing implementation value' })).toBeInTheDocument()
+  })
+
+  it('opens a linked Research Map node from Contract and returns to the same Contract item', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedGetActiveResearchMap.mockResolvedValue({
+      ...researchMapFixture,
+      is_current: true,
+      is_stale: false
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Required dataset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open linked Research Map node' }))
+
+    expect(await screen.findByLabelText('Evidence Inspector for Data and sample')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Implementation Contract' }))
+    expect(await screen.findByRole('button', { name: 'Required dataset' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
+  })
+
+  it('loads Contract history and surfaces an activation conflict without false freshness', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedListImplementationContractVersions.mockResolvedValue([
+      {
+        id: implementationContract.id,
+        document_id: implementationContract.document_id,
+        research_map_version_id: implementationContract.research_map_version_id,
+        previous_version_id: implementationContract.previous_version_id,
+        source_content_hash: implementationContract.source_content_hash,
+        research_map_signature: implementationContract.research_map_signature,
+        schema_version: implementationContract.schema_version,
+        provider: implementationContract.provider,
+        model_name: implementationContract.model_name,
+        status: implementationContract.status,
+        readiness: implementationContract.readiness,
+        is_active: true,
+        is_current: true,
+        is_stale: false,
+        created_at: implementationContract.created_at,
+        completed_at: implementationContract.completed_at
+      },
+      {
+        ...implementationContractVersion,
+        id: 'contract-0',
+        is_active: false,
+        is_current: false,
+        is_stale: true
+      }
+    ])
+    mockedActivateImplementationContract.mockRejectedValue(
+      new ApiError(409, 'The version changed before activation.')
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Contract history' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Activate contract-0' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm activation of contract-0' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The version changed before activation.')
+    expect(screen.getByLabelText('Contract version contract-0')).toHaveTextContent('Stale')
+    expect(screen.getByLabelText('Contract version contract-0')).not.toHaveTextContent('Current')
+  })
+
+  it('clears Contract selections and history when switching documents', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      },
+      {
+        id: 'doc-2',
+        title: 'second.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedListImplementationContractVersions.mockResolvedValue([
+      implementationContractVersion
+    ])
+    mockedGetActiveImplementationContract.mockImplementation(async (documentId) => ({
+      ...implementationContract,
+      id: documentId === 'doc-2' ? 'contract-2' : implementationContract.id,
+      document_id: documentId
+    }))
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Required dataset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contract history' }))
+    expect(await screen.findByLabelText('Contract version history')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Contract for second.pdf' }))
+    expect(
+      await screen.findByRole('navigation', { name: 'Implementation Contract outline' })
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText('Contract version history')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Signal direction' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
   })
 
   it('keeps contract polling progress visible', async () => {

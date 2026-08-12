@@ -25,6 +25,7 @@ type ContractInspectorProps = {
     reason: string | null
   ) => void
   onRemainBlocked: () => void
+  onOpenMapNode?: (nodeId: string) => void
 }
 
 export function ContractInspector({
@@ -34,7 +35,8 @@ export function ContractInspector({
   onClose,
   onOpenReader,
   onResolve,
-  onRemainBlocked
+  onRemainBlocked,
+  onOpenMapNode
 }: ContractInspectorProps) {
   const [decisionValue, setDecisionValue] = useState('')
   const [decisionReason, setDecisionReason] = useState('')
@@ -42,6 +44,8 @@ export function ContractInspector({
   const validationId = `contract-decision-validation-${item.id}`
   const noticeId = `contract-decision-notice-${item.id}`
   const isMissing = item.effective_origin === 'missing'
+  const linkedResearchNodeId =
+    item.evidence.find((evidence) => evidence.research_node_id !== null)?.research_node_id ?? null
 
   useEffect(() => {
     setDecisionValue('')
@@ -162,6 +166,18 @@ export function ContractInspector({
           </article>
         ))}
       </div>
+
+      {linkedResearchNodeId && onOpenMapNode ? (
+        <button
+          type="button"
+          className="reader-link contract-map-link"
+          disabled={pending}
+          onClick={() => onOpenMapNode(linkedResearchNodeId)}
+          aria-label="Open linked Research Map node"
+        >
+          Open linked Research Map node
+        </button>
+      ) : null}
 
       {notice ? (
         <p

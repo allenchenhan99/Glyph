@@ -1191,6 +1191,7 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 22px;
   padding: 16px 20px;
   border-bottom: 1px solid var(--rule);
@@ -1231,6 +1232,32 @@ h1 {
   background: var(--review-soft);
 }
 
+.contract-surface-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #eef1ed;
+}
+
+.contract-surface-nav button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 0;
+  border-radius: 3px;
+  color: var(--ink-muted);
+  background: transparent;
+  font-weight: 700;
+}
+
+.contract-surface-nav button:hover,
+.contract-surface-nav button:focus-visible {
+  color: var(--evidence);
+  background: var(--paper-raised);
+}
+
 .contract-trust-strip {
   min-height: 0;
   display: flex;
@@ -1260,6 +1287,233 @@ h1 {
 
 .contract-workbench.inspector-collapsed {
   grid-template-columns: minmax(230px, 0.72fr) minmax(0, 2.65fr);
+}
+
+.workspace-return {
+  margin: 12px 20px 0;
+}
+
+.contract-versions,
+.contract-export {
+  min-height: 560px;
+  padding: clamp(22px, 4vw, 48px);
+  background: var(--paper);
+}
+
+.contract-versions > header,
+.contract-export > header,
+.contract-diff > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.contract-versions > header,
+.contract-export > header {
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.contract-versions h2,
+.contract-export h2 {
+  margin: 0;
+  font-family: Georgia, "Noto Serif TC", "Songti TC", serif;
+  font-weight: 500;
+}
+
+.contract-version-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
+  gap: 12px;
+}
+
+.contract-version-list > article {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--rule-dark);
+  border-radius: 5px;
+  background: var(--paper-raised);
+}
+
+.contract-version-meta,
+.contract-version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.contract-version-meta {
+  min-width: 0;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.contract-version-meta > strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.contract-version-meta > span {
+  color: var(--ink-muted);
+  font-size: 0.76rem;
+}
+
+.contract-version-actions {
+  flex-wrap: wrap;
+}
+
+.contract-activation-confirm {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 9px 12px;
+  padding: 12px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.contract-activation-confirm p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.contract-activation-confirm button {
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  color: var(--warning);
+  background: transparent;
+  font-weight: 700;
+}
+
+.contract-activation-confirm button:first-of-type {
+  grid-column: 2;
+  color: #fff;
+  background: var(--warning);
+}
+
+.contract-activation-confirm button:last-of-type {
+  grid-column: 2;
+}
+
+.contract-compare-control,
+.contract-export-controls label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.contract-compare-control {
+  max-width: 420px;
+  margin-top: 22px;
+}
+
+.contract-compare-control select,
+.contract-export-controls select {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--rule-dark);
+  border-radius: 3px;
+  color: var(--ink);
+  background: var(--paper-raised);
+  font: inherit;
+}
+
+.contract-diff {
+  display: grid;
+  gap: 12px;
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--rule-dark);
+  border-radius: 5px;
+  background: #eef1ed;
+}
+
+.contract-diff > section {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.35fr) 1fr;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+}
+
+.contract-diff h4,
+.contract-diff ul {
+  margin: 0;
+}
+
+.contract-diff ul {
+  padding-left: 18px;
+}
+
+.contract-export {
+  max-width: none;
+}
+
+.contract-export > header,
+.contract-export-warning,
+.contract-export-boundary,
+.contract-export-controls,
+.contract-export > .map-alert,
+.contract-export > a {
+  max-width: 900px;
+}
+
+.contract-export-warning,
+.contract-export-boundary {
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border-radius: 4px;
+}
+
+.contract-export-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--conflict);
+  color: var(--conflict);
+  background: #f8ece7;
+}
+
+.contract-export-warning > div {
+  display: grid;
+  gap: 3px;
+}
+
+.contract-export-boundary {
+  border: 1px solid var(--review);
+  color: var(--review);
+  background: var(--review-soft);
+  line-height: 1.5;
+}
+
+.contract-export-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(170px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.contract-export-controls .primary-action {
+  min-height: 40px;
+}
+
+.contract-export > a {
+  display: inline-block;
+  margin-top: 16px;
+  color: var(--evidence);
+  font-weight: 700;
+}
+
+.contract-map-link {
+  margin: 0 18px 18px;
 }
 
 .contract-outline {
@@ -1756,6 +2010,14 @@ h1 {
     border-top: 1px solid var(--rule);
     border-left: 0;
   }
+
+  .contract-export-controls {
+    grid-template-columns: repeat(2, minmax(170px, 1fr));
+  }
+
+  .contract-export-controls .primary-action {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1850,6 +2112,31 @@ h1 {
   .contract-value-grid > div[aria-hidden] {
     transform: rotate(90deg);
     text-align: center;
+  }
+
+  .contract-surface-nav {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .contract-surface-nav button {
+    flex: 1 1 auto;
+  }
+
+  .contract-versions,
+  .contract-export {
+    min-height: 0;
+    padding: 20px 16px;
+  }
+
+  .contract-version-list,
+  .contract-export-controls,
+  .contract-diff > section {
+    grid-template-columns: 1fr;
+  }
+
+  .contract-export-controls .primary-action {
+    grid-column: auto;
   }
 
   .guided-controls {

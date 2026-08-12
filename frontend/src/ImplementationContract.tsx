@@ -1,7 +1,10 @@
 import { AlertTriangle, CircleCheck, LocateFixed, ShieldAlert } from 'lucide-react'
+import { useState } from 'react'
 
+import { ContractExport } from './ContractExport'
 import { ContractGuidedReview } from './ContractGuidedReview'
 import { ContractInspector } from './ContractInspector'
+import { ContractVersions } from './ContractVersions'
 import {
   contractItemTypeLabel,
   contractOriginLabel,
@@ -12,8 +15,13 @@ import {
 import type { ContractNotice } from './implementationContractState'
 import type {
   ContractResolutionStatus,
+  ContractExportFormat,
+  ContractExportLanguage,
   ContractValue,
-  ImplementationContract as ImplementationContractData
+  ImplementationContract as ImplementationContractData,
+  ImplementationContractDiff,
+  ImplementationContractExport,
+  ImplementationContractVersion
 } from './types'
 
 type ImplementationContractProps = {
@@ -35,6 +43,18 @@ type ImplementationContractProps = {
     reason: string | null
   ) => void
   onRemainBlocked: () => void
+  versions?: ImplementationContractVersion[]
+  diff?: ImplementationContractDiff | null
+  activationError?: string | null
+  onSelectVersion?: (versionId: string) => void
+  onCompareVersions?: (versionId: string, againstVersionId: string) => void
+  onActivateVersion?: (versionId: string) => void
+  onExport?: (
+    format: ContractExportFormat,
+    language: ContractExportLanguage
+  ) => Promise<ImplementationContractExport>
+  onOpenHistory?: () => void
+  onOpenMapNode?: (nodeId: string) => void
 }
 
 export function ImplementationContract({
@@ -51,8 +71,18 @@ export function ImplementationContract({
   onGuidedPrevious,
   onOpenReader,
   onResolve,
-  onRemainBlocked
+  onRemainBlocked,
+  versions = [],
+  diff = null,
+  activationError = null,
+  onSelectVersion = () => undefined,
+  onCompareVersions = () => undefined,
+  onActivateVersion = () => undefined,
+  onExport,
+  onOpenHistory,
+  onOpenMapNode
 }: ImplementationContractProps) {
+  const [workspaceView, setWorkspaceView] = useState<'review' | 'history' | 'export'>('review')
   const selectedItem =
     contract.items.find((item) => item.id === selectedItemId) ?? contract.items[0] ?? null
   const blockerCount = contract.issues.filter((issue) => issue.severity === 'error').length
@@ -77,6 +107,26 @@ export function ImplementationContract({
           <strong>{contractReadinessLabel(contract.readiness)}</strong>
           <span>{blockerCount} blocking issue{blockerCount === 1 ? '' : 's'}</span>
         </div>
+        <nav className="contract-surface-nav" aria-label="Contract surfaces">
+          {workspaceView !== 'review' ? (
+            <button type="button" onClick={() => setWorkspaceView('review')} aria-label="Return to Contract review">
+              Review
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => {
+              setWorkspaceView('history')
+              onOpenHistory?.()
+            }}
+            aria-label="Open Contract history"
+          >
+            History
+          </button>
+          <button type="button" onClick={() => setWorkspaceView('export')} aria-label="Open Contract export">
+            Export
+          </button>
+        </nav>
       </header>
 
       <div className="contract-trust-strip">
@@ -101,7 +151,32 @@ export function ImplementationContract({
         </p>
       ) : null}
 
-      <div className={inspectorOpen ? 'contract-workbench' : 'contract-workbench inspector-collapsed'}>
+      {workspaceView === 'history' ? (
+        <ContractVersions
+          versions={versions}
+          selectedVersionId={contract.id}
+          diff={diff}
+          activationError={activationError}
+          onSelectVersion={onSelectVersion}
+          onCompare={onCompareVersions}
+          onActivate={onActivateVersion}
+        />
+      ) : workspaceView === 'export' && onExport ? (
+        <ContractExport
+          readiness={contract.readiness}
+          blockerCount={blockerCount}
+          onExport={onExport}
+        />
+      ) : workspaceView === 'export' ? (
+        <section className="contract-export" aria-label="Contract export">
+          <p>Export is unavailable.</p>
+        </section>
+      ) : (
+        <div
+          className={
+            inspectorOpen ? 'contract-workbench' : 'contract-workbench inspector-collapsed'
+          }
+        >
         <nav className="contract-outline" aria-label="Implementation Contract outline">
           <div className="contract-outline-header">
             <span>{contract.items.length}</span>
@@ -198,9 +273,11 @@ export function ImplementationContract({
             onOpenReader={onOpenReader}
             onResolve={onResolve}
             onRemainBlocked={onRemainBlocked}
+            onOpenMapNode={onOpenMapNode}
           />
         ) : null}
-      </div>
+        </div>
+      )}
     </section>
   )
 }

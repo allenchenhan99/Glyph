@@ -157,6 +157,7 @@ describe('Reader', () => {
         payload={payload}
         focusBlockId="block-2"
         citingNodes={[{ id: 'node-1', title: 'Primary result' }]}
+        citationSource="Map"
         onReturnToMap={onReturnToMap}
       />
     )
@@ -164,9 +165,25 @@ describe('Reader', () => {
     const focused = screen.getByTestId('reader-row-block-2')
     expect(focused).toHaveFocus()
     expect(focused).toHaveAttribute('aria-current', 'location')
-    expect(within(focused).getByText('Cited by Primary result')).toBeInTheDocument()
+    expect(within(focused).getByText('Map citation · Primary result')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
     expect(onReturnToMap).toHaveBeenCalledTimes(1)
+  })
+
+  it('distinguishes Contract citation context from Map citation context', () => {
+    render(
+      <Reader
+        payload={payload}
+        focusBlockId="block-2"
+        citingNodes={[{ id: 'item-1', title: 'signal formula' }]}
+        citationSource="Contract"
+      />
+    )
+
+    const citations = within(screen.getByTestId('reader-row-block-2')).getByLabelText(
+      'Contract citations'
+    )
+    expect(citations).toHaveTextContent('Contract citation · signal formula')
   })
 })

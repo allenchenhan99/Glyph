@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { ImplementationContract } from './ImplementationContract'
 import { implementationContract } from './implementationContractTestData'
+import {
+  implementationContractDiff,
+  implementationContractVersion
+} from './implementationContractTestData'
 
 const defaultProps = {
   contract: implementationContract,
@@ -96,5 +100,27 @@ describe('ImplementationContract', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: 'Inspect selected contract item' }))
     expect(onOpenInspector).toHaveBeenCalledTimes(1)
+  })
+
+  it('switches deterministically between review, history, and export surfaces', () => {
+    render(
+      <ImplementationContract
+        {...defaultProps}
+        versions={[implementationContractVersion]}
+        diff={implementationContractDiff}
+        activationError={null}
+        onSelectVersion={vi.fn()}
+        onCompareVersions={vi.fn()}
+        onActivateVersion={vi.fn()}
+        onExport={vi.fn()}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contract history' }))
+    expect(screen.getByLabelText('Contract version history')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Contract export' }))
+    expect(screen.getByLabelText('Contract export')).toHaveTextContent('NOT IMPLEMENTATION READY')
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Contract review' }))
+    expect(screen.getByRole('navigation', { name: 'Implementation Contract outline' })).toBeInTheDocument()
   })
 })

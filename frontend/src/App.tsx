@@ -3,14 +3,19 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 
 import {
   ApiError,
+  activateImplementationContract,
   enqueueImplementationContract,
   enqueueResearchMap,
   getActiveImplementationContract,
   getActiveResearchMap,
   getImplementationContractJob,
+  getImplementationContractDiff,
+  getImplementationContractExport,
+  getImplementationContractVersion,
   getReader,
   getResearchMapJob,
   listDocuments,
+  listImplementationContractVersions,
   processDocument,
   resolveImplementationContractItem,
   reviewResearchNode,
@@ -35,6 +40,8 @@ import type {
   ContractResolutionStatus,
   ContractValue,
   ImplementationContractJob,
+  ImplementationContractDiff,
+  ImplementationContractVersion,
   ReaderPayload,
   ResearchNodeReview,
   ReviewStatus
@@ -54,6 +61,10 @@ export function App() {
   const [surface, setSurface] = useState<WorkspaceSurface>('map')
   const [readerReturnSurface, setReaderReturnSurface] =
     useState<ReaderReturnSurface>(null)
+  const [mapReturnContractItemId, setMapReturnContractItemId] = useState<string | null>(null)
+  const [contractVersions, setContractVersions] = useState<ImplementationContractVersion[]>([])
+  const [contractDiff, setContractDiff] = useState<ImplementationContractDiff | null>(null)
+  const [activationError, setActivationError] = useState<string | null>(null)
   const [mapState, dispatchMap] = useReducer(researchMapReducer, initialResearchMapState)
   const [contractState, dispatchContract] = useReducer(
     implementationContractReducer,
@@ -74,6 +85,12 @@ export function App() {
   function abortPolling() {
     pollController.current?.abort()
     pollController.current = null
+  }
+
+  function resetContractAuxiliaryState() {
+    setContractVersions([])
+    setContractDiff(null)
+    setActivationError(null)
   }
 
   async function refreshDocuments() {
@@ -137,6 +154,8 @@ export function App() {
       dispatchMap({ type: 'resetWorkspace' })
       dispatchContract({ type: 'resetDocument', documentId: document.id })
       setReaderReturnSurface(null)
+      setMapReturnContractItemId(null)
+      resetContractAuxiliaryState()
       setSurface('reader')
       setNotice(null)
     } catch (error) {
@@ -153,6 +172,8 @@ export function App() {
     setActiveDocument(document)
     setReader(null)
     setReaderReturnSurface(null)
+    setMapReturnContractItemId(null)
+    resetContractAuxiliaryState()
     setSurface('map')
     dispatchMap({ type: 'resetWorkspace' })
     dispatchContract({ type: 'resetDocument', documentId: document.id })
@@ -236,11 +257,106 @@ export function App() {
     }
   }
 
+  async function handleContractMapNode(nodeId: string) {
+    if (!activeDocument || !contractState.selectedItemId) return
+    const returnItemId = contractState.selectedItemId
+    try {
+      const map = await getActiveResearchMap(activeDocument.id)
+      dispatchMap({ type: 'resetWorkspace' })
+      dispatchMap({ type: 'mapLoaded', map })
+      const linkedNodeExists = map.nodes.some((node) => node.id === nodeId)
+      if (linkedNodeExists) {
+        dispatchMap({ type: 'selectNode', nodeId })
+        setNotice(null)
+      } else {
+        setNotice({
+          kind: 'status',
+          message: 'The linked Map node changed; Glyph selected the first available node.'
+        })
+      }
+      dispatchMap({ type: 'openInspector' })
+      setMapReturnContractItemId(returnItemId)
+      setSurface('map')
+    } catch (error) {
+      console.error(error)
+      setNotice({
+        kind: 'error',
+        message: errorMessage(error, 'The linked Research Map node could not be opened.')
+      })
+    }
+  }
+
+  function handleReturnFromMapToContract() {
+    const returnItemExists = contractState.contract?.items.some(
+      (item) => item.id === mapReturnContractItemId
+    )
+    if (mapReturnContractItemId && returnItemExists) {
+      dispatchContract({ type: 'selectItem', itemId: mapReturnContractItemId })
+    } else if (mapReturnContractItemId && contractState.contract?.items.length) {
+      dispatchContract({ type: 'selectItem', itemId: contractState.contract.items[0].id })
+      setNotice({
+        kind: 'status',
+        message: 'The previous Contract item changed; Glyph selected the first available item.'
+      })
+    }
+    dispatchContract({ type: 'openInspector' })
+    setMapReturnContractItemId(null)
+    setSurface('contract')
+  }
+
+  async function handleOpenContractHistory() {
+    if (!activeDocument) return
+    setActivationError(null)
+    try {
+      setContractVersions(await listImplementationContractVersions(activeDocument.id))
+    } catch (error) {
+      setActivationError(errorMessage(error, 'Could not load Contract history.'))
+    }
+  }
+
+  async function handleSelectContractVersion(versionId: string) {
+    if (!activeDocument) return
+    try {
+      const contract = await getImplementationContractVersion(versionId)
+      dispatchContract({ type: 'contractLoaded', documentId: activeDocument.id, contract })
+    } catch (error) {
+      setActivationError(errorMessage(error, 'Could not load that Contract version.'))
+    }
+  }
+
+  async function handleCompareContractVersions(
+    versionId: string,
+    againstVersionId: string
+  ) {
+    try {
+      setContractDiff(
+        await getImplementationContractDiff(versionId, againstVersionId)
+      )
+    } catch (error) {
+      setActivationError(errorMessage(error, 'Could not compare Contract versions.'))
+    }
+  }
+
+  async function handleActivateContractVersion(versionId: string) {
+    if (!activeDocument) return
+    setActivationError(null)
+    try {
+      const contract = await activateImplementationContract(versionId)
+      dispatchContract({ type: 'contractLoaded', documentId: activeDocument.id, contract })
+      setContractVersions(await listImplementationContractVersions(activeDocument.id))
+      await refreshDocuments()
+    } catch (error) {
+      setActivationError(errorMessage(error, 'Could not activate that Contract version.'))
+    }
+  }
+
   async function handleOpenContract(document: DocumentRecord) {
     abortPolling()
     setActiveDocument(document)
     setReader(null)
     setReaderReturnSurface(null)
+    setMapReturnContractItemId(null)
+    resetContractAuxiliaryState()
     setSurface('contract')
     dispatchMap({ type: 'resetWorkspace' })
     dispatchContract({ type: 'resetDocument', documentId: document.id })
@@ -273,6 +389,8 @@ export function App() {
     pollController.current = controller
     setReader(null)
     setReaderReturnSurface(null)
+    setMapReturnContractItemId(null)
+    resetContractAuxiliaryState()
     setSurface('contract')
     dispatchContract({ type: 'resetDocument', documentId: document.id })
     try {
@@ -543,31 +661,44 @@ export function App() {
             <Loader2 aria-hidden="true" size={20} /> Loading Research Map
           </section>
         ) : (
-          <ResearchMap
-            map={mapState.map}
-            selectedNodeId={mapState.selectedNodeId}
-            guidedStep={mapState.guidedStep}
-            inspectorOpen={mapState.inspectorOpen}
-            notice={mapState.notice}
-            job={mapState.job}
-            reviewPending={mapState.pendingReview !== null}
-            onSelectNode={(nodeId) => dispatchMap({ type: 'selectNode', nodeId })}
-            onOpenInspector={() => dispatchMap({ type: 'openInspector' })}
-            onCloseInspector={() => dispatchMap({ type: 'closeInspector' })}
-            onGuidedNext={() => dispatchMap({ type: 'guidedNext' })}
-            onGuidedPrevious={() => dispatchMap({ type: 'guidedPrevious' })}
-            onOpenReader={(blockId) => void handleMapEvidence(blockId)}
-            onReview={(status, corrected, note) => void handleReview(status, corrected, note)}
-            onGenerate={() => void handleGenerateMap()}
-            onBuildContract={(researchMapVersionId) =>
-              void handleBuildContract(researchMapVersionId)
-            }
-          />
+          <>
+            {mapReturnContractItemId ? (
+              <button
+                type="button"
+                className="text-button workspace-return"
+                onClick={handleReturnFromMapToContract}
+                aria-label="Return to Implementation Contract"
+              >
+                Return to Implementation Contract
+              </button>
+            ) : null}
+            <ResearchMap
+              map={mapState.map}
+              selectedNodeId={mapState.selectedNodeId}
+              guidedStep={mapState.guidedStep}
+              inspectorOpen={mapState.inspectorOpen}
+              notice={mapState.notice}
+              job={mapState.job}
+              reviewPending={mapState.pendingReview !== null}
+              onSelectNode={(nodeId) => dispatchMap({ type: 'selectNode', nodeId })}
+              onOpenInspector={() => dispatchMap({ type: 'openInspector' })}
+              onCloseInspector={() => dispatchMap({ type: 'closeInspector' })}
+              onGuidedNext={() => dispatchMap({ type: 'guidedNext' })}
+              onGuidedPrevious={() => dispatchMap({ type: 'guidedPrevious' })}
+              onOpenReader={(blockId) => void handleMapEvidence(blockId)}
+              onReview={(status, corrected, note) => void handleReview(status, corrected, note)}
+              onGenerate={() => void handleGenerateMap()}
+              onBuildContract={(researchMapVersionId) =>
+                void handleBuildContract(researchMapVersionId)
+              }
+            />
+          </>
         )
       ) : null}
       {activeDocument && surface === 'contract' ? (
         contractState.loadStatus === 'ready' && contractState.contract ? (
           <ImplementationContract
+            key={activeDocument.id}
             contract={contractState.contract}
             selectedItemId={contractState.selectedItemId}
             guidedStep={contractState.guidedStep}
@@ -584,6 +715,21 @@ export function App() {
               void handleContractResolution(status, value, reason)
             }
             onRemainBlocked={() => dispatchContract({ type: 'closeInspector' })}
+            versions={contractVersions}
+            diff={contractDiff}
+            activationError={activationError}
+            onOpenHistory={() => void handleOpenContractHistory()}
+            onSelectVersion={(versionId) => void handleSelectContractVersion(versionId)}
+            onCompareVersions={(versionId, againstVersionId) =>
+              void handleCompareContractVersions(versionId, againstVersionId)
+            }
+            onActivateVersion={(versionId) => void handleActivateContractVersion(versionId)}
+            onExport={(format, language) => {
+              const contract = contractState.contract
+              if (!contract) return Promise.reject(new Error('Contract export is unavailable.'))
+              return getImplementationContractExport(contract.id, format, language)
+            }}
+            onOpenMapNode={(nodeId) => void handleContractMapNode(nodeId)}
           />
         ) : (
           <ContractWorkspaceState
@@ -625,6 +771,13 @@ export function App() {
             readerReturnSurface === 'contract'
               ? 'Implementation Contract'
               : 'Research Map'
+          }
+          citationSource={
+            readerReturnSurface === 'contract'
+              ? 'Contract'
+              : readerReturnSurface === 'map'
+                ? 'Map'
+                : undefined
           }
         />
       ) : null}
