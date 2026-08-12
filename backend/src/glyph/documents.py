@@ -14,7 +14,12 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from glyph.config import Settings
 from glyph.models import Block, Document, Section, Summary
-from glyph.pipeline import get_job, process_document
+from glyph.pipeline import (
+    ProcessingConflictError,
+    document_process_coordinator,
+    get_job,
+    process_document,
+)
 from glyph.schemas import BlockOut, DocumentOut, JobOut, ReaderOut, SectionOut
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
@@ -283,7 +288,11 @@ def process_document_route(
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     require_source_path(document)
-    job = process_document(session, settings, document)
+    try:
+        with document_process_coordinator.acquire(document_id):
+            job = process_document(session, settings, document)
+    except ProcessingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return job_to_out(job)
 
 
