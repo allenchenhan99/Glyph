@@ -62,7 +62,6 @@ function isDocument(value: unknown): value is DocumentRecord {
     isRecord(value) &&
     isString(value.id) &&
     isString(value.title) &&
-    isString(value.source_path) &&
     isString(value.file_type) &&
     isString(value.status)
   )

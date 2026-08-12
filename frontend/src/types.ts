@@ -1,7 +1,6 @@
 export type DocumentRecord = {
   id: string
   title: string
-  source_path: string
   file_type: string
   status: string
 }

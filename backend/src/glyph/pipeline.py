@@ -66,6 +66,7 @@ def process_document(
         job.stage = "completed"
         job.progress = 100
         document.status = "completed"
+        document.processed_content_hash = document.content_hash
     except Exception as exc:  # noqa: BLE001 - adapters may raise provider errors
         job.status = "failed"
         job.stage = "failed"

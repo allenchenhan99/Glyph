@@ -58,15 +58,12 @@ def register_document(
     existing = session.scalar(
         select(Document).where(Document.source_path == str(source_path))
     )
-    content_hash = compute_hash(source_path)
     if existing is not None:
-        existing.content_hash = content_hash
+        refresh_document_state(existing, source_path, status or "discovered")
         existing.title = source_path.name
-        existing.file_type = source_path.suffix.lower().lstrip(".")
-        if status is not None:
-            existing.status = status
         return existing
 
+    content_hash = compute_hash(source_path)
     document = Document(
         id=str(uuid4()),
         title=source_path.name,
@@ -77,6 +74,44 @@ def register_document(
     )
     session.add(document)
     return document
+
+
+def refresh_document_state(
+    document: Document, source_path: Path, unprocessed_status: str
+) -> None:
+    if not source_path.is_file():
+        document.status = "missing"
+        return
+
+    previous_hash = document.content_hash
+    document.content_hash = compute_hash(source_path)
+    document.file_type = source_path.suffix.lower().lstrip(".")
+    if document.status == "processing":
+        return
+    if document.processed_content_hash is not None:
+        document.status = (
+            "completed"
+            if document.processed_content_hash == document.content_hash
+            else "stale"
+        )
+    elif document.status == "missing" or previous_hash != document.content_hash:
+        document.status = unprocessed_status
+
+
+def unprocessed_status_for_path(settings: Settings, source_path: Path) -> str:
+    try:
+        source_path.resolve().relative_to((settings.data_dir / "uploads").resolve())
+    except ValueError:
+        return "discovered"
+    return "uploaded"
+
+
+def require_source_path(document: Document) -> Path:
+    source_path = Path(document.source_path)
+    if not source_path.is_file():
+        document.status = "missing"
+        raise HTTPException(status_code=409, detail="Source file is missing")
+    return source_path
 
 
 def discover_book_documents(settings: Settings, session: Session) -> list[Document]:
@@ -93,7 +128,6 @@ def document_to_out(document: Document) -> DocumentOut:
     return DocumentOut(
         id=document.id,
         title=document.title,
-        source_path=document.source_path,
         file_type=document.file_type,
         status=document.status,
     )
@@ -154,7 +188,18 @@ def list_documents(
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
 ) -> list[DocumentOut]:
-    documents = discover_book_documents(settings, session)
+    discover_book_documents(settings, session)
+    documents = session.scalars(
+        select(Document).order_by(Document.created_at, Document.title)
+    ).all()
+    for document in documents:
+        source_path = Path(document.source_path)
+        refresh_document_state(
+            document,
+            source_path,
+            unprocessed_status_for_path(settings, source_path),
+        )
+    session.flush()
     return [document_to_out(document) for document in documents]
 
 
@@ -190,6 +235,7 @@ def process_document_route(
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    require_source_path(document)
     job = process_document(session, settings, document)
     return job_to_out(job)
 
@@ -281,7 +327,7 @@ def get_page_image(
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    source_path = Path(document.source_path)
+    source_path = require_source_path(document)
     if document.file_type in {"png", "jpg", "jpeg"}:
         return FileResponse(source_path)
     if document.file_type != "pdf":

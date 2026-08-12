@@ -148,6 +148,10 @@ git commit -m "feat: add compatible database migrations"
 - Modify: `backend/tests/test_documents.py`
 - Modify: `backend/tests/test_reader_payload.py`
 - Modify: `backend/tests/test_uploads.py`
+- Modify: `frontend/src/api.ts`
+- Modify: `frontend/src/types.ts`
+- Modify: `frontend/src/App.test.tsx`
+- Modify: `frontend/src/Reader.test.tsx`
 
 **Step 1: Write a failing uploaded-document listing test**
 

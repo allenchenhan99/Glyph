@@ -8,7 +8,6 @@ const payload: ReaderPayload = {
   document: {
     id: 'doc-1',
     title: 'sample.pdf',
-    source_path: '/book/sample.pdf',
     file_type: 'pdf',
     status: 'completed'
   },
