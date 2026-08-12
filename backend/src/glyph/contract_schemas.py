@@ -20,6 +20,8 @@ from glyph.contract_domain import (
 from glyph.research_domain import EvidenceRelation, LocatorType
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
+ContractExportFormat = Literal["json", "markdown"]
+ContractExportLanguage = Literal["en", "zh-TW", "bilingual"]
 BoundedText = Annotated[str, Field(max_length=4_000)]
 BoundedName = Annotated[str, Field(min_length=1, max_length=128)]
 

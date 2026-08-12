@@ -11,6 +11,9 @@ dependencies = [
     "uvicorn[standard]>=0.30",
 ]
 
+[project.scripts]
+glyph-contract = "glyph.contract_cli:entrypoint"
+
 [project.optional-dependencies]
 dev = [
     "bandit[toml]>=1.8",

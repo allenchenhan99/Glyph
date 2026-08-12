@@ -3,10 +3,12 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from glyph.contract_domain import decode_contract_value
+from glyph.contract_export import export_implementation_contract
 from glyph.contract_jobs import (
     ContractJobConflictError,
     ContractJobNotFoundError,
@@ -14,6 +16,8 @@ from glyph.contract_jobs import (
 )
 from glyph.contract_schemas import (
     ContractEnqueueRequest,
+    ContractExportFormat,
+    ContractExportLanguage,
     ContractJobOut,
     ContractResolutionOut,
     ContractResolutionRequest,
@@ -143,6 +147,31 @@ def get_contract_diff(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ImplementationContractConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/implementation-contracts/{version_id}/export")
+def export_contract_version(
+    version_id: str,
+    export_format: Annotated[ContractExportFormat, Query(alias="format")],
+    language: Annotated[ContractExportLanguage, Query()],
+    session: Annotated[Session, Depends(get_session)],
+) -> Response:
+    try:
+        artifact = export_implementation_contract(
+            session,
+            version_id,
+            export_format,
+            language,
+        )
+    except ImplementationContractNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(
+        content=artifact.content,
+        media_type=artifact.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+    )
 
 
 @router.patch(

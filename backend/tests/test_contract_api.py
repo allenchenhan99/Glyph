@@ -441,3 +441,50 @@ def test_document_list_batches_contract_summary_without_n_plus_one(contract_api)
     assert reviewed.status_code == 200
     refreshed = {item["id"]: item for item in client.get("/api/documents").json()}
     assert refreshed[document_id]["implementation_contract"]["reviewed_count"] == 1
+
+
+def test_export_route_returns_fresh_typed_downloads_and_strict_options(contract_api):
+    app, client, _executor, document_id, map_id, _source_dir = contract_api
+    version_id = _generate_contract(app, document_id, map_id)
+
+    json_response = client.get(
+        f"/api/implementation-contracts/{version_id}/export",
+        params={"format": "json", "language": "bilingual"},
+    )
+    markdown_response = client.get(
+        f"/api/implementation-contracts/{version_id}/export",
+        params={"format": "markdown", "language": "en"},
+    )
+
+    assert json_response.status_code == 200
+    assert json_response.headers["content-type"] == "application/json"
+    assert json_response.headers["content-disposition"].endswith(
+        f'implementation-contract-{version_id}.json"'
+    )
+    assert json_response.json()["contract_version_id"] == version_id
+    assert json_response.json()["readiness_marker"] == "NOT IMPLEMENTATION READY"
+    assert markdown_response.status_code == 200
+    assert markdown_response.headers["content-type"].startswith("text/markdown")
+    assert markdown_response.text.startswith("# NOT IMPLEMENTATION READY\n")
+
+    assert (
+        client.get(
+            f"/api/implementation-contracts/{version_id}/export",
+            params={"format": "python", "language": "en"},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            f"/api/implementation-contracts/{version_id}/export",
+            params={"format": "json", "language": "fr"},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/api/implementation-contracts/missing/export",
+            params={"format": "json", "language": "en"},
+        ).status_code
+        == 404
+    )
