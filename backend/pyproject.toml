@@ -14,7 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "bandit[toml]>=1.8",
-    "httpx>=0.27",
+    "httpx2>=2.10",
     "mypy>=1.14",
     "pip-audit>=2.7",
     "pytest>=8.0",

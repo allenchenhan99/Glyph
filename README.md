@@ -1,6 +1,10 @@
 # Glyph
 
+[![CI](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml/badge.svg)](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml)
+
 Glyph is a local-first reading workspace for turning PDFs and document images into aligned source and Traditional Chinese reading blocks. It extracts text, translates through the user's own authenticated Claude Code or Codex CLI, reconstructs formulas as LaTeX, and renders them with KaTeX.
+
+Glyph is currently pre-1.0. It is designed for a trusted single user on one machine, not as an authenticated or internet-facing service.
 
 ## Current Capabilities
 
@@ -10,6 +14,8 @@ Glyph is a local-first reading workspace for turning PDFs and document images in
 - Translate bounded block batches through Claude Code or Codex CLI without storing an API key in Glyph.
 - Validate block coverage, retry invalid batches, and resume from a local AI cache.
 - Preserve the previous readable result when reprocessing fails.
+- Detect changed or missing source files without deleting the last readable result.
+- Bound uploads and external tools by content type, size, and timeout.
 - Read source and Traditional Chinese side by side with paired hover states.
 - Render reconstructed formulas as accessible KaTeX/MathML with links to original pages.
 
@@ -19,7 +25,7 @@ Section summaries currently use deterministic placeholder text. Full AI-generate
 
 - macOS or Linux. Windows users should use WSL.
 - Python 3.11 or newer.
-- A current Node.js LTS release with npm.
+- Node.js 22 or newer with npm.
 - Poppler (`pdftotext` and `pdftoppm`) for PDF extraction and page previews.
 - One authenticated CLI provider:
   - [Claude Code setup](https://docs.anthropic.com/en/docs/claude-code/getting-started)
@@ -68,6 +74,8 @@ Start both services:
 
 Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Open**. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
 
+Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
+
 ## Privacy Model
 
 Glyph does not commit or upload runtime artifacts to this repository. The following stay local and are ignored by git:
@@ -111,7 +119,10 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | `GLYPH_CLI_CONCURRENCY` | `3` | Concurrent CLI workers |
 | `GLYPH_CLI_TIMEOUT_SECONDS` | `300` | Timeout for one CLI invocation |
 | `GLYPH_FRONTEND_PORT` | `5173` | Vite development-server port |
+| `GLYPH_MAX_UPLOAD_BYTES` | `52428800` | Maximum accepted upload size in bytes |
 | `GLYPH_OCR_MODE` | `mock` | Text-backed extraction or `unlimited_ocr` |
+| `GLYPH_OCR_TIMEOUT_SECONDS` | `300` | Timeout for one OCR invocation |
+| `GLYPH_PAGE_RENDER_TIMEOUT_SECONDS` | `30` | Timeout for rendering one PDF page |
 | `GLYPH_BOOK_DIR` | `book/` | Optional source-document directory override |
 | `GLYPH_DATA_DIR` | `data/` | Optional runtime-data directory override |
 | `GLYPH_DATABASE_URL` | local SQLite | Optional SQLAlchemy database URL |
@@ -120,18 +131,36 @@ Lower `GLYPH_CLI_CONCURRENCY` if the selected CLI account reports usage or rate 
 
 ## Development
 
-Run checks from the repository root:
+Use deterministic mock adapters while developing:
+
+```dotenv
+GLYPH_AI_MODE=mock
+GLYPH_OCR_MODE=mock
+```
+
+Run every backend gate from the repository root:
 
 ```bash
-cd backend
-../.venv/bin/pytest -q
+.venv/bin/ruff check backend/src backend/tests
+.venv/bin/ruff format --check backend/src backend/tests
+.venv/bin/mypy backend/src/glyph
+.venv/bin/pytest --cov=glyph --cov-report=term-missing --cov-fail-under=85
+.venv/bin/bandit -q -r backend/src/glyph
+.venv/bin/pip-audit
+```
 
-cd ../frontend
-npm test -- --run
+Then run the frontend gates:
+
+```bash
+cd frontend
+npm audit --audit-level=high
+npm run test:coverage
 npm run build
 ```
 
 The backend API runs on `http://127.0.0.1:8000`; Vite proxies `/api` requests from `http://127.0.0.1:5173`.
+
+Database changes are managed by Alembic and applied automatically at backend startup. The migration bootstrap recognizes the original public schema and preserves its data; it rejects unknown partial schemas instead of resetting them. Back up `data/` and `book/` before upgrading. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture and pull-request expectations.
 
 ## Project Layout
 
@@ -143,6 +172,10 @@ frontend/      React, TypeScript, Vite, and KaTeX reader
 scripts/       setup and local development commands
 docs/plans/    architecture and implementation decisions
 ```
+
+## Contributing and Security
+
+Issues and focused pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and use the private process in [SECURITY.md](SECURITY.md) for vulnerabilities. Do not attach real documents, databases, credentials, or unsanitized provider output to public reports.
 
 ## License
 
