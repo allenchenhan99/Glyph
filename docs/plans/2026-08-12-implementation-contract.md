@@ -353,15 +353,15 @@ Every gold file validates against the Task 2 codec and includes exact quote span
 - daily price: `review_needed` before confirmations;
 - cross-market: `blocked` with at least `transaction_cost` and `weighting_rule` blockers.
 
-**Step 3: Write a failing benchmark harness**
+**Step 3: Write the provider-independent benchmark harness**
 
-Assert schema validity, exact evidence, unsupported default rate `0%`, blocker recall `100%`, false-ready count `0`, non-human evidence coverage `100%`, and identical-run diff count `0`.
+Assert every gold file has valid schema and exact evidence, unsupported default rate `0%`, blocker recall `100%`, false-ready count `0`, and non-human evidence coverage `100%`. Provider-output and identical-run comparisons belong to Task 6 so this task can finish with a green commit.
 
-**Step 4: Verify RED for provider-dependent assertions**
+**Step 4: Verify the gold contracts independently**
 
 Run: `cd backend && ../.venv/bin/pytest tests/test_contract_benchmark.py -q`
 
-Expected: fixture/schema tests pass, provider generation tests FAIL because no mock contract provider exists.
+Expected: all provider-independent fixture, schema, evidence, blocker, and readiness assertions pass.
 
 **Step 5: Commit the benchmark contract**
 
@@ -370,7 +370,7 @@ git add backend/tests/fixtures/contracts backend/tests/test_contract_benchmark.p
 git commit -m "test: define implementation contract benchmarks"
 ```
 
-This intentional RED commit locks product acceptance before provider implementation.
+This green commit locks the gold acceptance contract before provider implementation without leaving the branch in a failing state.
 
 ### Task 6: Implement the evidence-first provider protocol and deterministic mock
 
@@ -391,6 +391,8 @@ audit = audit_contract(to_effective_items(draft, accepted, ()))
 ```
 
 Prove synthesis receives accepted evidence only, no session or unrestricted block collection. Reject referenced evidence IDs that were not accepted, duplicate item keys, unknown types, and `human_decision` output from a provider.
+
+Extend `test_contract_benchmark.py` with provider-output assertions for byte-equivalent gold contracts and identical-run diff count `0`.
 
 **Step 2: Verify RED**
 
