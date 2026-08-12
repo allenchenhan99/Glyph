@@ -5,7 +5,6 @@ import type {
   ResearchNodeReview
 } from './types'
 
-export type WorkspaceMode = 'map' | 'reader'
 export type ResearchMapNotice = { kind: 'status' | 'error'; message: string } | null
 
 type PendingReview = {
@@ -15,7 +14,6 @@ type PendingReview = {
 }
 
 export type ResearchMapState = {
-  mode: WorkspaceMode
   loadStatus: 'idle' | 'loading' | 'ready' | 'error'
   map: ResearchMap | null
   job: ResearchMapJob | null
@@ -31,7 +29,6 @@ export type ResearchMapState = {
 }
 
 export const initialResearchMapState: ResearchMapState = {
-  mode: 'map',
   loadStatus: 'idle',
   map: null,
   job: null,
@@ -76,7 +73,6 @@ export function researchMapReducer(
     case 'mapLoaded':
       return {
         ...state,
-        mode: 'map',
         loadStatus: 'ready',
         map: action.map,
         selectedNodeId: state.selectedNodeId ?? action.map.nodes[0]?.id ?? null,
@@ -90,7 +86,6 @@ export function researchMapReducer(
     case 'mapAbsent':
       return {
         ...state,
-        mode: 'map',
         loadStatus: 'ready',
         map: null,
         selectedNodeId: null,
@@ -178,9 +173,9 @@ export function researchMapReducer(
       }
     }
     case 'openReader':
-      return { ...state, mode: 'reader', readerFocusBlockId: action.blockId }
+      return { ...state, readerFocusBlockId: action.blockId }
     case 'returnToMap':
-      return { ...state, mode: 'map', readerFocusBlockId: null }
+      return { ...state, readerFocusBlockId: null }
   }
 }
 

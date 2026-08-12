@@ -17,7 +17,8 @@ const defaultProps = {
   onGuidedPrevious: vi.fn(),
   onOpenReader: vi.fn(),
   onReview: vi.fn(),
-  onGenerate: vi.fn()
+  onGenerate: vi.fn(),
+  onBuildContract: vi.fn()
 }
 
 describe('ResearchMap', () => {
@@ -105,5 +106,48 @@ describe('ResearchMap', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('synthesize map42%')
     expect(screen.queryByRole('button', { name: 'Generate new version' })).not.toBeInTheDocument()
+  })
+
+  it('builds a contract from the explicit active Map version', () => {
+    const onBuildContract = vi.fn()
+    const currentMap = { ...researchMapFixture, is_current: true, is_stale: false }
+    render(
+      <ResearchMap
+        {...defaultProps}
+        map={currentMap}
+        onBuildContract={onBuildContract}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Build Implementation Contract' }))
+
+    expect(onBuildContract).toHaveBeenCalledWith('map-1')
+  })
+
+  it('disables contract creation for a stale Map and explains recovery', () => {
+    render(<ResearchMap {...defaultProps} />)
+
+    expect(
+      screen.getByRole('button', { name: 'Build Implementation Contract' })
+    ).toBeDisabled()
+    expect(screen.getByText(/refresh the source and Research Map/i)).toBeInTheDocument()
+  })
+
+  it('does not offer contract creation for an unfinished or failed Map', () => {
+    render(
+      <ResearchMap
+        {...defaultProps}
+        map={{
+          ...researchMapFixture,
+          status: 'failed',
+          is_current: true,
+          is_stale: false
+        }}
+      />
+    )
+
+    expect(
+      screen.queryByRole('button', { name: 'Build Implementation Contract' })
+    ).not.toBeInTheDocument()
   })
 })

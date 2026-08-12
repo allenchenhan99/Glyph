@@ -3,8 +3,11 @@ import { useEffect, useReducer, useRef, useState } from 'react'
 
 import {
   ApiError,
+  enqueueImplementationContract,
   enqueueResearchMap,
+  getActiveImplementationContract,
   getActiveResearchMap,
+  getImplementationContractJob,
   getReader,
   getResearchMapJob,
   listDocuments,
@@ -12,6 +15,11 @@ import {
   reviewResearchNode,
   uploadDocument
 } from './api'
+import {
+  implementationContractReducer,
+  initialImplementationContractState,
+  pollImplementationContractJob
+} from './implementationContractState'
 import { Reader } from './Reader'
 import { ResearchMap } from './ResearchMap'
 import {
@@ -21,6 +29,7 @@ import {
 } from './researchMapState'
 import type {
   DocumentRecord,
+  ImplementationContractJob,
   ReaderPayload,
   ResearchNodeReview,
   ReviewStatus
@@ -28,6 +37,8 @@ import type {
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 type Notice = { kind: 'status' | 'error'; message: string } | null
+type WorkspaceSurface = 'map' | 'contract' | 'reader'
+type ReaderReturnSurface = 'map' | 'contract' | null
 
 export function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
@@ -35,11 +46,29 @@ export function App() {
   const [notice, setNotice] = useState<Notice>(null)
   const [reader, setReader] = useState<ReaderPayload | null>(null)
   const [activeDocument, setActiveDocument] = useState<DocumentRecord | null>(null)
+  const [surface, setSurface] = useState<WorkspaceSurface>('map')
+  const [readerReturnSurface, setReaderReturnSurface] =
+    useState<ReaderReturnSurface>(null)
   const [mapState, dispatchMap] = useReducer(researchMapReducer, initialResearchMapState)
+  const [contractState, dispatchContract] = useReducer(
+    implementationContractReducer,
+    initialImplementationContractState
+  )
   const pollController = useRef<AbortController | null>(null)
   const reviewRequestSequence = useRef(0)
 
-  useEffect(() => () => pollController.current?.abort(), [])
+  useEffect(
+    () => () => {
+      pollController.current?.abort()
+      pollController.current = null
+    },
+    []
+  )
+
+  function abortPolling() {
+    pollController.current?.abort()
+    pollController.current = null
+  }
 
   async function refreshDocuments() {
     setLoadState('loading')
@@ -95,12 +124,14 @@ export function App() {
   async function handleOpenReader(document: DocumentRecord) {
     setNotice({ kind: 'status', message: `Opening ${document.title}` })
     try {
-      pollController.current?.abort()
+      abortPolling()
       const nextReader = await getReader(document.id)
       setActiveDocument(document)
       setReader(nextReader)
       dispatchMap({ type: 'resetWorkspace' })
-      dispatchMap({ type: 'openReader', blockId: '' })
+      dispatchContract({ type: 'resetDocument', documentId: document.id })
+      setReaderReturnSurface(null)
+      setSurface('reader')
       setNotice(null)
     } catch (error) {
       console.error(error)
@@ -112,10 +143,13 @@ export function App() {
   }
 
   async function handleOpenMap(document: DocumentRecord) {
-    pollController.current?.abort()
+    abortPolling()
     setActiveDocument(document)
     setReader(null)
+    setReaderReturnSurface(null)
+    setSurface('map')
     dispatchMap({ type: 'resetWorkspace' })
+    dispatchContract({ type: 'resetDocument', documentId: document.id })
     dispatchMap({ type: 'mapLoading' })
     try {
       dispatchMap({ type: 'mapLoaded', map: await getActiveResearchMap(document.id) })
@@ -134,7 +168,7 @@ export function App() {
 
   async function handleGenerateMap() {
     if (!activeDocument) return
-    pollController.current?.abort()
+    abortPolling()
     const controller = new AbortController()
     pollController.current = controller
     try {
@@ -145,8 +179,11 @@ export function App() {
         onJob: (job) => dispatchMap({ type: 'jobUpdated', job }),
         signal: controller.signal
       })
+      if (controller.signal.aborted) return
       if (terminal?.status === 'completed') {
-        dispatchMap({ type: 'mapLoaded', map: await getActiveResearchMap(activeDocument.id) })
+        const map = await getActiveResearchMap(activeDocument.id)
+        if (controller.signal.aborted) return
+        dispatchMap({ type: 'mapLoaded', map })
         await refreshDocuments()
       }
     } catch (error) {
@@ -156,6 +193,8 @@ export function App() {
         type: 'mapFailed',
         message: errorMessage(error, 'Could not generate the Research Map.')
       })
+    } finally {
+      if (pollController.current === controller) pollController.current = null
     }
   }
 
@@ -164,6 +203,8 @@ export function App() {
     try {
       setReader(await getReader(activeDocument.id))
       dispatchMap({ type: 'openReader', blockId })
+      setReaderReturnSurface('map')
+      setSurface('reader')
     } catch (error) {
       console.error(error)
       dispatchMap({
@@ -171,6 +212,88 @@ export function App() {
         message: errorMessage(error, 'The cited Reader block could not be opened.')
       })
     }
+  }
+
+  async function handleOpenContract(document: DocumentRecord) {
+    abortPolling()
+    setActiveDocument(document)
+    setReader(null)
+    setReaderReturnSurface(null)
+    setSurface('contract')
+    dispatchMap({ type: 'resetWorkspace' })
+    dispatchContract({ type: 'resetDocument', documentId: document.id })
+    dispatchContract({ type: 'contractLoading', documentId: document.id })
+    try {
+      const contract = await getActiveImplementationContract(document.id)
+      dispatchContract({ type: 'contractLoaded', documentId: document.id, contract })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        dispatchContract({ type: 'contractAbsent', documentId: document.id })
+        return
+      }
+      console.error(error)
+      dispatchContract({
+        type: 'contractFailed',
+        documentId: document.id,
+        message: errorMessage(
+          error,
+          `Could not load the Implementation Contract for ${document.title}.`
+        )
+      })
+    }
+  }
+
+  async function handleBuildContract(researchMapVersionId: string) {
+    if (!activeDocument) return
+    const document = activeDocument
+    abortPolling()
+    const controller = new AbortController()
+    pollController.current = controller
+    setReader(null)
+    setReaderReturnSurface(null)
+    setSurface('contract')
+    dispatchContract({ type: 'resetDocument', documentId: document.id })
+    try {
+      const queued = await enqueueImplementationContract(
+        document.id,
+        researchMapVersionId
+      )
+      if (controller.signal.aborted) return
+      dispatchContract({ type: 'jobUpdated', documentId: document.id, job: queued })
+      const terminal = await pollImplementationContractJob(queued.id, {
+        fetchJob: getImplementationContractJob,
+        onJob: (job) =>
+          dispatchContract({ type: 'jobUpdated', documentId: document.id, job }),
+        signal: controller.signal
+      })
+      if (controller.signal.aborted || terminal?.status !== 'completed') return
+      dispatchContract({ type: 'contractLoading', documentId: document.id })
+      const contract = await getActiveImplementationContract(document.id)
+      if (controller.signal.aborted) return
+      dispatchContract({ type: 'contractLoaded', documentId: document.id, contract })
+      await refreshDocuments()
+    } catch (error) {
+      if (controller.signal.aborted) return
+      console.error(error)
+      dispatchContract({
+        type: 'contractFailed',
+        documentId: document.id,
+        message: errorMessage(error, 'Could not generate the Implementation Contract.')
+      })
+    } finally {
+      if (pollController.current === controller) pollController.current = null
+    }
+  }
+
+  function handleReturnFromReader() {
+    if (readerReturnSurface === 'map') {
+      dispatchMap({ type: 'returnToMap' })
+      setSurface('map')
+    } else if (readerReturnSurface === 'contract') {
+      dispatchContract({ type: 'returnToContract' })
+      setSurface('contract')
+    }
+    setReaderReturnSurface(null)
   }
 
   async function handleReview(
@@ -270,6 +393,26 @@ export function App() {
                       <span>{document.research_map.is_stale ? 'Stale' : 'Current'} · {document.research_map.status}</span>
                     </div>
                   ) : null}
+                  {document.implementation_contract ? (
+                    <div
+                      className="library-map-summary"
+                      aria-label={`Implementation Contract status for ${document.title}`}
+                    >
+                      <span>
+                        {contractReadinessLabel(document.implementation_contract.readiness)} ·{' '}
+                        {document.implementation_contract.blocker_count} blocker
+                        {document.implementation_contract.blocker_count === 1 ? '' : 's'}
+                      </span>
+                      <span>
+                        {document.implementation_contract.reviewed_count} /{' '}
+                        {document.implementation_contract.total_reviewable_count} reviewed
+                      </span>
+                      <span>
+                        {document.implementation_contract.is_stale ? 'Stale' : 'Current'} ·{' '}
+                        {document.implementation_contract.generation_status}
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="row-actions">
@@ -291,6 +434,17 @@ export function App() {
                   <FileSearch aria-hidden="true" size={16} />
                   <span>Research Map</span>
                 </button>
+                {canResumeContract(document) ? (
+                  <button
+                    type="button"
+                    className="icon-button secondary"
+                    onClick={() => void handleOpenContract(document)}
+                    aria-label={`Resume Contract for ${document.title}`}
+                  >
+                    <FileSearch aria-hidden="true" size={16} />
+                    <span>Resume Contract</span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="icon-button tertiary"
@@ -306,7 +460,7 @@ export function App() {
         </div>
       </section>
 
-      {activeDocument && mapState.mode === 'map' ? (
+      {activeDocument && surface === 'map' ? (
         mapState.loadStatus === 'loading' ? (
           <section className="workspace-loading" aria-label="Loading Research Map">
             <Loader2 aria-hidden="true" size={20} /> Loading Research Map
@@ -328,10 +482,20 @@ export function App() {
             onOpenReader={(blockId) => void handleMapEvidence(blockId)}
             onReview={(status, corrected, note) => void handleReview(status, corrected, note)}
             onGenerate={() => void handleGenerateMap()}
+            onBuildContract={(researchMapVersionId) =>
+              void handleBuildContract(researchMapVersionId)
+            }
           />
         )
       ) : null}
-      {reader && mapState.mode === 'reader' ? (
+      {activeDocument && surface === 'contract' ? (
+        <ContractWorkspaceState
+          loadStatus={contractState.loadStatus}
+          job={contractState.job}
+          notice={contractState.notice}
+        />
+      ) : null}
+      {reader && surface === 'reader' ? (
         <Reader
           payload={reader}
           focusBlockId={mapState.readerFocusBlockId || null}
@@ -346,7 +510,7 @@ export function App() {
                   .map((node) => ({ id: node.id, title: node.title }))
               : []
           }
-          onReturnToMap={mapState.map ? () => dispatchMap({ type: 'returnToMap' }) : undefined}
+          onReturnToMap={readerReturnSurface === 'map' ? handleReturnFromReader : undefined}
         />
       ) : null}
     </main>
@@ -374,4 +538,73 @@ function documentStatusLabel(status: DocumentRecord['status']): string {
     case 'missing':
       return 'Source file missing'
   }
+}
+
+function canResumeContract(document: DocumentRecord): boolean {
+  const summary = document.implementation_contract
+  return Boolean(
+    summary?.is_current &&
+      (summary.generation_status === 'complete' ||
+        summary.generation_status === 'partial')
+  )
+}
+
+function contractReadinessLabel(
+  readiness: NonNullable<DocumentRecord['implementation_contract']>['readiness']
+): string {
+  switch (readiness) {
+    case 'blocked':
+      return 'Blocked'
+    case 'review_needed':
+      return 'Review needed'
+    case 'implementation_ready':
+      return 'Implementation ready'
+  }
+}
+
+function ContractWorkspaceState({
+  loadStatus,
+  job,
+  notice
+}: {
+  loadStatus: 'idle' | 'loading' | 'absent' | 'ready' | 'error'
+  job: ImplementationContractJob | null
+  notice: Notice
+}) {
+  const generationActive = job?.status === 'queued' || job?.status === 'running'
+  return (
+    <section
+      className="research-map-empty"
+      aria-label="Implementation Contract workspace"
+    >
+      <FileSearch aria-hidden="true" size={28} />
+      <p className="kicker">Implementation Contract</p>
+      {generationActive && job ? (
+        <div className="map-job-progress" role="status">
+          <div>
+            <span>{job.stage}</span>
+            <strong>{Math.round(job.progress)}%</strong>
+          </div>
+          <progress value={job.progress} max="100">
+            {job.progress}%
+          </progress>
+        </div>
+      ) : null}
+      {loadStatus === 'loading' ? (
+        <p className="status-line">
+          <Loader2 aria-hidden="true" size={16} /> Loading Implementation Contract
+        </p>
+      ) : null}
+      {loadStatus === 'ready' ? <h2>Contract ready for review</h2> : null}
+      {loadStatus === 'absent' ? <h2>No Implementation Contract yet</h2> : null}
+      {notice ? (
+        <p
+          className={notice.kind === 'error' ? 'error-line' : 'status-line'}
+          role={notice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {notice.message}
+        </p>
+      ) : null}
+    </section>
+  )
 }

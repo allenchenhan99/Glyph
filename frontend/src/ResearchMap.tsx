@@ -30,6 +30,7 @@ type ResearchMapProps = {
     reviewNote: string | null
   ) => void
   onGenerate: () => void
+  onBuildContract: (researchMapVersionId: string) => void
 }
 
 type OutlineCategory = {
@@ -84,7 +85,8 @@ export function ResearchMap({
   onGuidedPrevious,
   onOpenReader,
   onReview,
-  onGenerate
+  onGenerate,
+  onBuildContract
 }: ResearchMapProps) {
   if (!map) {
     return (
@@ -116,6 +118,8 @@ export function ResearchMap({
 
   const selectedNode = map.nodes.find((node) => node.id === selectedNodeId) ?? map.nodes[0] ?? null
   const generationActive = job && (job.status === 'queued' || job.status === 'running')
+  const contractStatusEligible = map.status === 'complete' || map.status === 'partial'
+  const contractSourceEligible = map.is_current && !map.is_stale
 
   return (
     <section className="research-map-shell" aria-label="Research Map workspace">
@@ -147,6 +151,28 @@ export function ResearchMap({
           ) : null}
         </div>
       </header>
+
+      {contractStatusEligible ? (
+        <div className="map-contract-action">
+          <button
+            type="button"
+            className="primary-action"
+            disabled={!contractSourceEligible}
+            onClick={() => onBuildContract(map.id)}
+          >
+            Build Implementation Contract
+          </button>
+          {map.is_stale ? (
+            <p className="status-line">
+              Refresh the source and Research Map before building a contract.
+            </p>
+          ) : !map.is_current ? (
+            <p className="status-line">
+              Activate the current Research Map version before building a contract.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {notice ? (
         <p className={notice.kind === 'error' ? 'map-alert' : 'map-status'} role={notice.kind === 'error' ? 'alert' : 'status'}>
