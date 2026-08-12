@@ -6,19 +6,29 @@ from pathlib import Path
 from typing import cast
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from glyph.contract_ai import (
+    ContractInputBlock,
+    MockImplementationContractProvider,
+    validate_extracted_requirements,
+    validate_synthesized_contract,
+)
 from glyph.contract_audit import EffectiveContractItem, audit_contract
 from glyph.contract_domain import (
     CONTRACT_SCHEMA_VERSION,
     ContractItemDraft,
     ContractReadiness,
     decode_contract_value,
+    encode_contract_value,
     validate_contract_item_type,
     validate_contract_origin,
     validate_contract_section,
     validate_readiness,
 )
-from glyph.contract_evidence import AcceptedContractEvidence
+from glyph.contract_evidence import AcceptedContractEvidence, ContractEvidenceContext
+from glyph.models import Base, Block, Document, ResearchMapVersion
 from glyph.research_domain import validate_evidence_relation, validate_locator_type
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures" / "contracts"
@@ -185,6 +195,96 @@ def _audit_gold(payload: dict[str, object]):  # type: ignore[no-untyped-def]
     return audit_contract(effective_items)
 
 
+def _generate_mock_contract(
+    payload: dict[str, object],
+) -> tuple[EffectiveContractItem, ...]:
+    source_file = _text(payload["source_file"], "source_file")
+    source_text = (FIXTURE_DIRECTORY / source_file).read_text(encoding="utf-8")
+    source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        document = Document(
+            id="benchmark-paper",
+            title=_text(payload["paper_id"], "paper_id"),
+            source_path=f"/books/{source_file}",
+            content_hash=source_hash,
+            processed_content_hash=source_hash,
+            file_type="txt",
+            status="completed",
+        )
+        map_version = ResearchMapVersion(
+            id="benchmark-map",
+            document_id=document.id,
+            previous_version_id=None,
+            source_content_hash=source_hash,
+            schema_version="1",
+            provider="mock",
+            model_name=None,
+            status="complete",
+            is_active=True,
+        )
+        block = Block(
+            id="source",
+            document_id=document.id,
+            source_content_hash=source_hash,
+            order_index=0,
+            page_number=1,
+            block_type="text",
+            source_text=source_text,
+            translated_text=source_text,
+        )
+        session.add_all([document, map_version, block])
+        session.commit()
+        provider = MockImplementationContractProvider()
+        candidates = provider.extract_requirements(
+            (ContractInputBlock.from_model(block),)
+        )
+        accepted = validate_extracted_requirements(
+            session,
+            ContractEvidenceContext(
+                document_id=document.id,
+                source_content_hash=source_hash,
+                research_map_version_id=map_version.id,
+            ),
+            candidates,
+        )
+        return validate_synthesized_contract(
+            provider.synthesize_contract(accepted), accepted
+        )
+
+
+def _items_payload(items: tuple[EffectiveContractItem, ...]) -> list[object]:
+    return [
+        {
+            "item_key": item.draft.item_key,
+            "section": item.draft.section,
+            "item_type": item.draft.item_type,
+            "origin": item.draft.origin,
+            "value": (
+                json.loads(encode_contract_value(item.draft.value))
+                if item.draft.value is not None
+                else None
+            ),
+            "rationale": item.draft.rationale,
+            "is_blocking": item.draft.is_blocking,
+            "is_optional": item.draft.is_optional,
+            "display_order": item.draft.display_order,
+            "evidence": [
+                {
+                    "quote_start": anchor.quote_start,
+                    "quote_end": anchor.quote_end,
+                    "quote_text": anchor.quote_text,
+                    "relation": anchor.relation,
+                    "locator_type": anchor.locator_type,
+                }
+                for anchor in item.evidence
+            ],
+        }
+        for item in items
+    ]
+
+
 def test_benchmark_suite_has_three_original_papers() -> None:
     paths = _gold_paths()
 
@@ -262,3 +362,34 @@ def test_gold_loading_and_audit_are_deterministic(gold_path: Path) -> None:
 
     assert first_payload == second_payload
     assert _audit_gold(first_payload) == _audit_gold(second_payload)
+
+
+@pytest.mark.parametrize("gold_path", _gold_paths(), ids=lambda path: path.stem)
+def test_mock_provider_output_is_byte_equivalent_to_gold(gold_path: Path) -> None:
+    payload = _load_gold(gold_path)
+
+    actual_items = _items_payload(_generate_mock_contract(payload))
+    expected_items = _list(payload["items"], "items")
+
+    canonical = lambda value: json.dumps(  # noqa: E731 - local canonicalizer
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    assert canonical(actual_items) == canonical(expected_items)
+
+
+@pytest.mark.parametrize("gold_path", _gold_paths(), ids=lambda path: path.stem)
+def test_mock_provider_identical_runs_have_zero_changes(gold_path: Path) -> None:
+    payload = _load_gold(gold_path)
+
+    first = _generate_mock_contract(payload)
+    second = _generate_mock_contract(payload)
+    changed_items = sum(
+        first_item != second_item
+        for first_item, second_item in zip(first, second, strict=True)
+    )
+
+    assert changed_items == 0
+    assert first == second
