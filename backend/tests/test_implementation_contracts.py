@@ -3,11 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from glyph.contract_ai import (
@@ -16,11 +18,21 @@ from glyph.contract_ai import (
     SynthesizedContractItem,
     ValidatedContractEvidence,
 )
-from glyph.contract_domain import decode_contract_value, encode_contract_value
+from glyph.contract_domain import (
+    ContractItemDraft,
+    ListValue,
+    ScalarValue,
+    decode_contract_value,
+    encode_contract_value,
+)
 from glyph.implementation_contracts import (
     ImplementationContractConflictError,
     ImplementationContractNotFoundError,
     ImplementationContractService,
+    activate_implementation_contract,
+    append_contract_resolution,
+    diff_implementation_contracts,
+    list_implementation_contract_versions,
     load_implementation_contract,
 )
 from glyph.models import (
@@ -30,6 +42,7 @@ from glyph.models import (
     ImplementationContractEvidence,
     ImplementationContractIssue,
     ImplementationContractItem,
+    ImplementationContractResolution,
     ImplementationContractVersion,
     ResearchEvidence,
     ResearchMapVersion,
@@ -69,6 +82,75 @@ class PartialProvider(MockImplementationContractProvider):
         return (
             SynthesizedContractItem(items[0].draft, ()),
             *items[1:],
+        )
+
+
+class ChangedValueProvider(MockImplementationContractProvider):
+    provider_name = "changed_value_mock"
+
+    def synthesize_contract(self, evidence):  # type: ignore[no-untyped-def]
+        items = list(super().synthesize_contract(evidence))
+        first = items[0]
+        changed_value = ListValue(
+            kind="list",
+            values=(
+                ScalarValue(kind="scalar", value="Compustat"),
+                ScalarValue(kind="scalar", value="CRSP"),
+                ScalarValue(kind="scalar", value="IBES"),
+            ),
+        )
+        items[0] = SynthesizedContractItem(
+            replace(first.draft, value=changed_value), first.evidence_ids
+        )
+        return tuple(items)
+
+
+class DiffClassificationProvider(MockImplementationContractProvider):
+    provider_name = "diff_mock"
+
+    def synthesize_contract(self, evidence):  # type: ignore[no-untyped-def]
+        items = list(super().synthesize_contract(evidence))
+        by_key = {item.draft.item_key: item for item in items}
+        required_field = by_key["required_field.1"]
+        by_key["required_field.1"] = SynthesizedContractItem(
+            replace(
+                required_field.draft,
+                value=ListValue(
+                    kind="list",
+                    values=(ScalarValue(kind="scalar", value="revised_field"),),
+                ),
+            ),
+            required_field.evidence_ids,
+        )
+        direction = by_key["signal_direction.1"]
+        by_key["signal_direction.1"] = SynthesizedContractItem(
+            replace(direction.draft, origin="author_explicit", rationale=None),
+            direction.evidence_ids,
+        )
+        frequency = by_key["data_frequency.1"]
+        by_key["data_frequency.1"] = SynthesizedContractItem(frequency.draft, ())
+        del by_key["availability_lag.1"]
+        added = SynthesizedContractItem(
+            ContractItemDraft(
+                item_key="sample_filter.1",
+                section="universe_and_sample",
+                item_type="sample_filter",
+                value=None,
+                origin="missing",
+                rationale="The paper does not state an additional sample filter.",
+                is_blocking=False,
+                is_optional=True,
+                display_order=9,
+            ),
+            (),
+        )
+        return tuple(
+            [
+                by_key[item.draft.item_key]
+                for item in items
+                if item.draft.item_key in by_key
+            ]
+            + [added]
         )
 
 
@@ -180,6 +262,10 @@ def _counts(session: Session) -> dict[str, int]:
             ImplementationContractIssue,
         )
     }
+
+
+def _view_item(contract, item_key: str):  # type: ignore[no-untyped-def]
+    return next(item for item in contract.items if item.item_key == item_key)
 
 
 def _snapshot_contract(session: Session, version_id: str) -> tuple[object, ...]:
@@ -621,5 +707,619 @@ def test_loader_batches_items_evidence_and_issues_without_n_plus_one(
     ]
     assert len(loaded.items) == 16
     assert sum(len(item.evidence) for item in loaded.items) == 17
-    assert len(statements) <= 9
+    # Ten bounded queries include one whole-document lineage read; none scale
+    # with the number of contract items or evidence anchors.
+    assert len(statements) <= 10
     assert len(contract_evidence_selects) == 1
+
+
+def test_confirmed_resolution_is_append_only_and_keeps_the_draft_value(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item = _view_item(contract, "required_dataset.1")
+    session.commit()
+
+    resolution = append_contract_resolution(
+        session,
+        item.id,
+        status="confirmed",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason=None,
+        request_id="confirm-dataset",
+    )
+    session.commit()
+    loaded_item = _view_item(
+        load_implementation_contract(session, contract.id), item.item_key
+    )
+
+    assert resolution.revision_number == 1
+    assert resolution.status == "confirmed"
+    assert loaded_item.resolution == resolution
+    assert loaded_item.effective_value == loaded_item.draft_value
+    assert loaded_item.effective_origin == loaded_item.origin
+    assert "review_required" not in {issue.code for issue in loaded_item.issues}
+    model = session.get(ImplementationContractItem, item.id)
+    assert model is not None
+    assert model.draft_value_json == encode_contract_value(item.draft_value)
+    assert model.origin == item.origin
+
+
+@pytest.mark.parametrize("status", ["corrected", "decided"])
+def test_corrected_and_decided_require_typed_values_and_reasons(
+    contract_database_factory,
+    status: str,
+) -> None:
+    source_file = (
+        "cross_market_long_short.txt"
+        if status == "decided"
+        else "monthly_accounting_signal.txt"
+    )
+    session, document, _map_version = contract_database_factory(source_file)
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item_key = "transaction_cost.1" if status == "decided" else "weighting_rule.1"
+    item = _view_item(contract, item_key)
+    replacement = ScalarValue(kind="scalar", value="explicit_human_choice")
+
+    with pytest.raises(ValueError, match="value and reason"):
+        append_contract_resolution(
+            session,
+            item.id,
+            status=status,
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id=f"invalid-{status}",
+        )
+
+    saved = append_contract_resolution(
+        session,
+        item.id,
+        status=status,
+        based_on_item_signature=item.item_signature,
+        value=replacement,
+        reason="A documented replication choice.",
+        request_id=f"valid-{status}",
+    )
+    loaded_item = _view_item(
+        load_implementation_contract(session, contract.id), item.item_key
+    )
+
+    assert saved.resolved_value == replacement
+    assert loaded_item.effective_value == replacement
+    assert loaded_item.effective_origin == "human_decision"
+
+
+def test_not_applicable_is_limited_to_a_reasoned_missing_cost_or_optional_item(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory(
+        "cross_market_long_short.txt"
+    )
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    weighting = _view_item(contract, "weighting_rule.1")
+    cost = _view_item(contract, "transaction_cost.1")
+
+    with pytest.raises(ImplementationContractConflictError, match="not applicable"):
+        append_contract_resolution(
+            session,
+            weighting.id,
+            status="not_applicable",
+            based_on_item_signature=weighting.item_signature,
+            value=None,
+            reason="Attempt to skip a mandatory field.",
+            request_id="skip-weighting",
+        )
+    with pytest.raises(ValueError, match="requires a reason"):
+        append_contract_resolution(
+            session,
+            cost.id,
+            status="not_applicable",
+            based_on_item_signature=cost.item_signature,
+            value=None,
+            reason=None,
+            request_id="gross-without-reason",
+        )
+
+    saved = append_contract_resolution(
+        session,
+        cost.id,
+        status="not_applicable",
+        based_on_item_signature=cost.item_signature,
+        value=None,
+        reason="Replicate gross returns exactly as reported.",
+        request_id="gross-replication",
+    )
+
+    assert saved.status == "not_applicable"
+    assert saved.reason == "Replicate gross returns exactly as reported."
+    assert load_implementation_contract(session, contract.id).readiness == "blocked"
+
+
+def test_questioned_resolution_refreshes_readiness_with_item_severity(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory(
+        "daily_price_signal.txt"
+    )
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    blocking = _view_item(contract, "weighting_rule.1")
+    optional = _view_item(contract, "turnover_assumption.1")
+
+    append_contract_resolution(
+        session,
+        optional.id,
+        status="questioned",
+        based_on_item_signature=optional.item_signature,
+        value=None,
+        reason="Turnover timing needs review.",
+        request_id="question-turnover",
+    )
+    optional_loaded = _view_item(
+        load_implementation_contract(session, contract.id), optional.item_key
+    )
+    assert (
+        next(
+            issue
+            for issue in optional_loaded.issues
+            if issue.code == "blocking_item_questioned"
+        ).severity
+        == "warning"
+    )
+
+    append_contract_resolution(
+        session,
+        blocking.id,
+        status="questioned",
+        based_on_item_signature=blocking.item_signature,
+        value=None,
+        reason="Weighting statement needs review.",
+        request_id="question-weighting",
+    )
+    loaded = load_implementation_contract(session, contract.id)
+    blocking_loaded = _view_item(loaded, blocking.item_key)
+    assert loaded.readiness == "blocked"
+    assert (
+        next(
+            issue
+            for issue in blocking_loaded.issues
+            if issue.code == "blocking_item_questioned"
+        ).severity
+        == "error"
+    )
+
+
+def test_resolution_rejects_obsolete_signatures_and_reused_request_payloads(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item = _view_item(contract, "required_dataset.1")
+
+    with pytest.raises(ImplementationContractConflictError, match="obsolete"):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature="0" * 64,
+            value=None,
+            reason=None,
+            request_id="obsolete",
+        )
+
+    first = append_contract_resolution(
+        session,
+        item.id,
+        status="confirmed",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason=None,
+        request_id="idempotent-request",
+    )
+    repeated = append_contract_resolution(
+        session,
+        item.id,
+        status="confirmed",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason=None,
+        request_id="idempotent-request",
+    )
+    assert repeated == first
+    assert (
+        session.scalar(
+            select(func.count()).select_from(ImplementationContractResolution)
+        )
+        == 1
+    )
+
+    with pytest.raises(ImplementationContractConflictError, match="request ID"):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="questioned",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason="Different payload.",
+            request_id="idempotent-request",
+        )
+
+
+def test_resolution_revisions_and_supersedes_links_are_monotonic(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item = _view_item(contract, "required_dataset.1")
+
+    first = append_contract_resolution(
+        session,
+        item.id,
+        status="confirmed",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason=None,
+        request_id="revision-1",
+    )
+    second = append_contract_resolution(
+        session,
+        item.id,
+        status="questioned",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason="Reopened after data vendor review.",
+        request_id="revision-2",
+    )
+
+    assert (first.revision_number, second.revision_number) == (1, 2)
+    assert first.supersedes_resolution_id is None
+    assert second.supersedes_resolution_id == first.id
+    history = _view_item(
+        load_implementation_contract(session, contract.id), item.item_key
+    ).resolution_history
+    assert [resolution.id for resolution in history] == [first.id, second.id]
+
+
+def test_resolution_revision_race_returns_reload_conflict(
+    contract_database_factory,
+    monkeypatch,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item = _view_item(contract, "required_dataset.1")
+    original_flush = session.flush
+
+    def fail_with_revision_race(*args, **kwargs):  # type: ignore[no-untyped-def]
+        if any(
+            isinstance(value, ImplementationContractResolution) for value in session.new
+        ):
+            raise IntegrityError(
+                "INSERT resolution", {}, Exception("duplicate revision")
+            )
+        return original_flush(*args, **kwargs)
+
+    monkeypatch.setattr(session, "flush", fail_with_revision_race)
+
+    with pytest.raises(
+        ImplementationContractConflictError, match="changed concurrently"
+    ):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id="concurrent-request",
+        )
+
+
+def test_resolution_and_readiness_refresh_are_one_atomic_savepoint(
+    contract_database_factory,
+    monkeypatch,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    item = _view_item(contract, "required_dataset.1")
+    session.commit()
+
+    def fail_refresh(*args, **kwargs):  # type: ignore[no-untyped-def]
+        raise RuntimeError("injected audit refresh failure")
+
+    monkeypatch.setattr(
+        "glyph.implementation_contracts._refresh_affected_contract_audits",
+        fail_refresh,
+    )
+
+    with pytest.raises(RuntimeError, match="injected audit refresh failure"):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id="atomic-resolution",
+        )
+    session.commit()
+
+    assert (
+        session.scalar(
+            select(func.count()).select_from(ImplementationContractResolution)
+        )
+        == 0
+    )
+    loaded = load_implementation_contract(session, contract.id)
+    assert loaded.readiness == "review_needed"
+    assert _view_item(loaded, item.item_key).resolution is None
+
+
+def test_readiness_and_issues_refresh_after_every_resolution(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+
+    for index, item in enumerate(contract.items):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id=f"confirm-{index}",
+        )
+    ready = load_implementation_contract(session, contract.id)
+
+    assert ready.readiness == "implementation_ready"
+    assert ready.issues == ()
+    model = session.get(ImplementationContractVersion, contract.id)
+    assert model is not None and model.readiness == "implementation_ready"
+
+
+def test_resolution_carries_only_to_an_identical_item_signature(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    first = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    first_item = _view_item(first, "required_dataset.1")
+    resolution = append_contract_resolution(
+        session,
+        first_item.id,
+        status="confirmed",
+        based_on_item_signature=first_item.item_signature,
+        value=None,
+        reason=None,
+        request_id="carry-exact",
+    )
+    session.commit()
+
+    identical = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    identical_item = _view_item(identical, first_item.item_key)
+    changed = ImplementationContractService(session, ChangedValueProvider()).generate(
+        document.id
+    )
+    changed_item = _view_item(changed, first_item.item_key)
+
+    assert identical_item.item_signature == first_item.item_signature
+    assert identical_item.resolution is not None
+    assert identical_item.resolution.id == resolution.id
+    assert [item.id for item in identical_item.resolution_history] == [resolution.id]
+    assert changed_item.item_signature != first_item.item_signature
+    assert changed_item.resolution is None
+    assert (
+        session.scalar(
+            select(func.count()).select_from(ImplementationContractResolution)
+        )
+        == 1
+    )
+
+
+def test_identical_regeneration_persists_readiness_from_carried_resolutions(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    first = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    for index, item in enumerate(first.items):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id=f"ready-{index}",
+        )
+    assert load_implementation_contract(session, first.id).readiness == (
+        "implementation_ready"
+    )
+    session.commit()
+
+    identical = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    model = session.get(ImplementationContractVersion, identical.id)
+
+    assert identical.readiness == "implementation_ready"
+    assert identical.issues == ()
+    assert model is not None and model.readiness == "implementation_ready"
+    assert session.scalar(
+        select(func.count()).select_from(ImplementationContractResolution)
+    ) == len(first.items)
+
+
+def test_newer_resolution_never_applies_retroactively_to_ancestor(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    first = service.generate(document.id)
+    session.commit()
+    second = service.generate(document.id)
+    second_item = _view_item(second, "required_dataset.1")
+
+    saved = append_contract_resolution(
+        session,
+        second_item.id,
+        status="confirmed",
+        based_on_item_signature=second_item.item_signature,
+        value=None,
+        reason=None,
+        request_id="newer-only",
+    )
+
+    assert (
+        _view_item(
+            load_implementation_contract(session, second.id), second_item.item_key
+        ).resolution
+        == saved
+    )
+    assert (
+        _view_item(
+            load_implementation_contract(session, first.id), second_item.item_key
+        ).resolution
+        is None
+    )
+
+
+def test_late_ancestor_resolutions_refresh_identical_descendant_readiness(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    first = service.generate(document.id)
+    session.commit()
+    second = service.generate(document.id)
+    assert second.readiness == "review_needed"
+
+    for index, item in enumerate(first.items):
+        append_contract_resolution(
+            session,
+            item.id,
+            status="confirmed",
+            based_on_item_signature=item.item_signature,
+            value=None,
+            reason=None,
+            request_id=f"late-ancestor-{index}",
+        )
+
+    descendant = load_implementation_contract(session, second.id)
+    descendant_model = session.get(ImplementationContractVersion, second.id)
+    assert descendant.readiness == "implementation_ready"
+    assert descendant.issues == ()
+    assert descendant_model is not None
+    assert descendant_model.readiness == "implementation_ready"
+
+
+def test_diff_classifies_all_change_types_in_stable_contract_order(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    baseline = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    session.commit()
+    changed = ImplementationContractService(
+        session, DiffClassificationProvider()
+    ).generate(document.id)
+
+    diff = diff_implementation_contracts(session, changed.id, baseline.id)
+    classifications = {item.item_key: item.classification for item in diff.items}
+
+    assert classifications["required_dataset.1"] == "unchanged"
+    assert classifications["required_field.1"] == "value_changed"
+    assert classifications["signal_direction.1"] == "origin_changed"
+    assert classifications["data_frequency.1"] == "evidence_changed"
+    assert classifications["sample_filter.1"] == "added"
+    assert classifications["availability_lag.1"] == "removed"
+    order = [
+        (
+            item.section_order,
+            item.display_order,
+            item.item_key,
+        )
+        for item in diff.items
+    ]
+    assert order == sorted(order)
+
+
+def test_list_and_activate_historical_versions_preserve_stale_truth(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    first = service.generate(document.id)
+    session.commit()
+    second = service.generate(document.id)
+    session.commit()
+
+    versions = list_implementation_contract_versions(session, document.id)
+    assert {version.id for version in versions} == {first.id, second.id}
+    assert next(version for version in versions if version.id == second.id).is_active
+
+    document.content_hash = "f" * 64
+    document.status = "stale"
+    session.commit()
+    activated = activate_implementation_contract(session, first.id)
+
+    assert activated.id == first.id
+    assert activated.is_active is True
+    assert activated.is_current is False
+    assert activated.is_stale is True
+    assert load_implementation_contract(session, second.id).is_active is False
+
+    first_model = session.get(ImplementationContractVersion, first.id)
+    assert first_model is not None
+    first_model.status = "building"
+    session.commit()
+    with pytest.raises(
+        ImplementationContractConflictError, match="complete or partial"
+    ):
+        activate_implementation_contract(session, first.id)
+
+
+def test_version_listing_and_diff_validate_document_ownership_and_existence(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+
+    with pytest.raises(ImplementationContractNotFoundError, match="Document"):
+        list_implementation_contract_versions(session, "missing-document")
+    with pytest.raises(ImplementationContractNotFoundError, match="Contract"):
+        diff_implementation_contracts(session, contract.id, "missing-contract")

@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from glyph.contract_ai import (
@@ -26,6 +27,7 @@ from glyph.contract_domain import (
     CONTRACT_SCHEMA_VERSION,
     CONTRACT_SECTIONS,
     ContractItemDraft,
+    ContractResolutionDraft,
     ContractValue,
     decode_contract_value,
     encode_contract_value,
@@ -33,19 +35,23 @@ from glyph.contract_domain import (
     validate_contract_item_type,
     validate_contract_origin,
     validate_contract_section,
+    validate_diff_classification,
+    validate_resolution_status,
 )
-from glyph.contract_evidence import ContractEvidenceContext
+from glyph.contract_evidence import AcceptedContractEvidence, ContractEvidenceContext
 from glyph.models import (
     Block,
     Document,
     ImplementationContractEvidence,
     ImplementationContractIssue,
     ImplementationContractItem,
+    ImplementationContractResolution,
     ImplementationContractVersion,
     ResearchEvidence,
     ResearchMapVersion,
     ResearchNode,
 )
+from glyph.research_domain import validate_evidence_relation, validate_locator_type
 
 StageCallback = Callable[[str, float], None]
 _SECTION_ORDER = {section: index for index, section in enumerate(CONTRACT_SECTIONS)}
@@ -86,6 +92,21 @@ class ContractIssueView:
 
 
 @dataclass(frozen=True)
+class ContractResolutionView:
+    id: str
+    item_id: str
+    revision_number: int
+    supersedes_resolution_id: str | None
+    status: str
+    resolved_value: ContractValue | None
+    reason: str | None
+    based_on_contract_version_id: str
+    based_on_item_signature: str
+    request_id: str
+    resolved_at: datetime
+
+
+@dataclass(frozen=True)
 class ContractItemView:
     id: str
     item_key: str
@@ -102,6 +123,8 @@ class ContractItemView:
     item_signature: str
     evidence: tuple[ContractEvidenceView, ...]
     issues: tuple[ContractIssueView, ...]
+    resolution: ContractResolutionView | None
+    resolution_history: tuple[ContractResolutionView, ...]
 
 
 @dataclass(frozen=True)
@@ -124,6 +147,43 @@ class ImplementationContractView:
     completed_at: datetime | None
     items: tuple[ContractItemView, ...]
     issues: tuple[ContractIssueView, ...]
+
+
+@dataclass(frozen=True)
+class ImplementationContractVersionSummaryView:
+    id: str
+    document_id: str
+    research_map_version_id: str
+    previous_version_id: str | None
+    source_content_hash: str
+    research_map_signature: str
+    schema_version: str
+    provider: str
+    model_name: str | None
+    status: str
+    readiness: str
+    is_active: bool
+    is_current: bool
+    is_stale: bool
+    created_at: datetime
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ContractItemDiffView:
+    item_key: str
+    classification: str
+    version_item_id: str | None
+    against_item_id: str | None
+    section_order: int
+    display_order: int
+
+
+@dataclass(frozen=True)
+class ImplementationContractDiffView:
+    version_id: str
+    against_version_id: str
+    items: tuple[ContractItemDiffView, ...]
 
 
 @dataclass(frozen=True)
@@ -313,8 +373,7 @@ def _persist_and_activate(
         item_by_key = persist_items(session, version, items)
         persist_issues(session, version, audit, item_by_key)
         session.flush()
-        version.status = audit.generation_status
-        version.readiness = audit.readiness
+        _refresh_contract_audit(session, version)
         version.completed_at = datetime.now(UTC)
         if previous is not None:
             previous.is_active = False
@@ -391,6 +450,259 @@ def persist_issues(
                 message=issue.message,
             )
         )
+
+
+def append_contract_resolution(
+    session: Session,
+    item_id: str,
+    *,
+    status: str,
+    based_on_item_signature: str,
+    value: ContractValue | None,
+    reason: str | None,
+    request_id: str,
+) -> ContractResolutionView:
+    item = session.get(ImplementationContractItem, item_id)
+    if item is None:
+        raise ImplementationContractNotFoundError(
+            "Implementation Contract item not found"
+        )
+    version = session.get(ImplementationContractVersion, item.contract_version_id)
+    if version is None:
+        raise ImplementationContractNotFoundError("Implementation Contract not found")
+    if item.item_signature != based_on_item_signature:
+        raise ImplementationContractConflictError(
+            "Resolution is based on an obsolete item signature"
+        )
+    if not request_id or len(request_id) > 128:
+        raise ValueError("request_id must contain between 1 and 128 characters")
+    normalized_reason = reason.strip() if reason and reason.strip() else None
+    resolution_draft = ContractResolutionDraft(
+        status=validate_resolution_status(status),
+        value=value,
+        reason=normalized_reason,
+    )
+    if resolution_draft.status == "not_applicable" and not (
+        item.is_optional
+        or (item.origin == "missing" and item.item_type == "transaction_cost")
+    ):
+        raise ImplementationContractConflictError(
+            "This mandatory contract item cannot be marked not applicable"
+        )
+    desired_value_json = (
+        encode_contract_value(resolution_draft.value)
+        if resolution_draft.value is not None
+        else None
+    )
+    existing = session.scalar(
+        select(ImplementationContractResolution).where(
+            ImplementationContractResolution.item_id == item.id,
+            ImplementationContractResolution.request_id == request_id,
+        )
+    )
+    if existing is not None:
+        if _resolution_payload(existing) != (
+            resolution_draft.status,
+            desired_value_json,
+            resolution_draft.reason,
+            based_on_item_signature,
+        ):
+            raise ImplementationContractConflictError(
+                "Resolution request ID was already used with a different payload"
+            )
+        return _resolution_view(existing)
+
+    latest = session.scalar(
+        select(ImplementationContractResolution)
+        .where(ImplementationContractResolution.item_id == item.id)
+        .order_by(
+            ImplementationContractResolution.revision_number.desc(),
+            ImplementationContractResolution.resolved_at.desc(),
+            ImplementationContractResolution.id.desc(),
+        )
+    )
+    latest_revision = session.scalar(
+        select(func.max(ImplementationContractResolution.revision_number)).where(
+            ImplementationContractResolution.item_id == item.id
+        )
+    )
+    resolution = ImplementationContractResolution(
+        id=str(uuid4()),
+        item_id=item.id,
+        revision_number=(latest_revision or 0) + 1,
+        supersedes_resolution_id=latest.id if latest is not None else None,
+        status=resolution_draft.status,
+        resolved_value_json=desired_value_json,
+        reason=resolution_draft.reason,
+        based_on_contract_version_id=version.id,
+        based_on_item_signature=item.item_signature,
+        request_id=request_id,
+    )
+    try:
+        with session.begin_nested():
+            session.add(resolution)
+            session.flush()
+            _refresh_affected_contract_audits(session, version, item.item_signature)
+    except IntegrityError as exc:
+        raced = session.scalar(
+            select(ImplementationContractResolution).where(
+                ImplementationContractResolution.item_id == item.id,
+                ImplementationContractResolution.request_id == request_id,
+            )
+        )
+        if raced is not None and _resolution_payload(raced) == (
+            resolution_draft.status,
+            desired_value_json,
+            resolution_draft.reason,
+            based_on_item_signature,
+        ):
+            return _resolution_view(raced)
+        raise ImplementationContractConflictError(
+            "Resolution changed concurrently; reload and try again"
+        ) from exc
+    return _resolution_view(resolution)
+
+
+def _resolution_payload(
+    resolution: ImplementationContractResolution,
+) -> tuple[str, str | None, str | None, str]:
+    return (
+        resolution.status,
+        resolution.resolved_value_json,
+        resolution.reason,
+        resolution.based_on_item_signature,
+    )
+
+
+def _refresh_contract_audit(
+    session: Session,
+    version: ImplementationContractVersion,
+) -> None:
+    items = list(
+        session.scalars(
+            select(ImplementationContractItem).where(
+                ImplementationContractItem.contract_version_id == version.id
+            )
+        ).all()
+    )
+    item_ids = [item.id for item in items]
+    evidence_models = (
+        session.scalars(
+            select(ImplementationContractEvidence)
+            .where(ImplementationContractEvidence.item_id.in_(item_ids))
+            .order_by(
+                ImplementationContractEvidence.item_id,
+                ImplementationContractEvidence.quote_start,
+                ImplementationContractEvidence.id,
+            )
+        ).all()
+        if item_ids
+        else ()
+    )
+    evidence_by_item: defaultdict[str, list[AcceptedContractEvidence]] = defaultdict(
+        list
+    )
+    for anchor in evidence_models:
+        evidence_by_item[anchor.item_id].append(
+            AcceptedContractEvidence(
+                block_id=anchor.block_id,
+                research_node_id=anchor.research_node_id,
+                quote_text=anchor.quote_text,
+                quote_start=anchor.quote_start,
+                quote_end=anchor.quote_end,
+                relation=validate_evidence_relation(anchor.relation),
+                locator_type=validate_locator_type(anchor.locator_type),
+                source_quote_hash=anchor.source_quote_hash,
+                source_label=anchor.source_label,
+            )
+        )
+    resolution_models = _load_resolution_models(
+        session,
+        _lineage_version_ids(session, version),
+        item_ids,
+        {item.item_signature for item in items},
+    )
+    effective_by_signature = {
+        resolution.based_on_item_signature: resolution
+        for resolution in resolution_models
+    }
+    effective_items: list[EffectiveContractItem] = []
+    for item in items:
+        value = (
+            decode_contract_value(json.loads(item.draft_value_json))
+            if item.draft_value_json is not None
+            else None
+        )
+        draft = ContractItemDraft(
+            item_key=item.item_key,
+            section=validate_contract_section(item.section),
+            item_type=validate_contract_item_type(item.item_type),
+            value=value,
+            origin=validate_contract_origin(item.origin),
+            rationale=item.rationale,
+            is_blocking=item.is_blocking,
+            is_optional=item.is_optional,
+            display_order=item.display_order,
+        )
+        resolution_model = effective_by_signature.get(item.item_signature)
+        resolution = (
+            ContractResolutionDraft(
+                status=validate_resolution_status(resolution_model.status),
+                value=(
+                    decode_contract_value(
+                        json.loads(resolution_model.resolved_value_json)
+                    )
+                    if resolution_model.resolved_value_json is not None
+                    else None
+                ),
+                reason=resolution_model.reason,
+            )
+            if resolution_model is not None
+            else None
+        )
+        effective_items.append(
+            EffectiveContractItem(
+                draft=draft,
+                evidence=tuple(evidence_by_item[item.id]),
+                resolution=resolution,
+            )
+        )
+    audit = audit_contract(effective_items)
+    session.execute(
+        delete(ImplementationContractIssue).where(
+            ImplementationContractIssue.contract_version_id == version.id
+        )
+    )
+    persist_issues(session, version, audit, {item.item_key: item for item in items})
+    version.status = audit.generation_status
+    version.readiness = audit.readiness
+    session.flush()
+
+
+def _refresh_affected_contract_audits(
+    session: Session,
+    source_version: ImplementationContractVersion,
+    item_signature_value: str,
+) -> None:
+    candidates = (
+        session.scalars(
+            select(ImplementationContractVersion)
+            .join(
+                ImplementationContractItem,
+                ImplementationContractItem.contract_version_id
+                == ImplementationContractVersion.id,
+            )
+            .where(
+                ImplementationContractVersion.document_id == source_version.document_id,
+                ImplementationContractItem.item_signature == item_signature_value,
+            )
+        )
+        .unique()
+        .all()
+    )
+    for candidate in candidates:
+        if source_version.id in _lineage_version_ids(session, candidate):
+            _refresh_contract_audit(session, candidate)
 
 
 def load_implementation_contract(
@@ -477,11 +789,28 @@ def load_implementation_contract(
         if issue.item_id is not None:
             issues_by_item[issue.item_id].append(issue)
 
+    resolution_models = _load_resolution_models(
+        session,
+        _lineage_version_ids(session, version),
+        item_ids,
+        {item.item_signature for item in item_models},
+    )
+    history_by_signature: defaultdict[str, list[ContractResolutionView]] = defaultdict(
+        list
+    )
+    effective_by_signature: dict[str, ContractResolutionView] = {}
+    for resolution_model in resolution_models:
+        resolution = _resolution_view(resolution_model)
+        history_by_signature[resolution.based_on_item_signature].append(resolution)
+        effective_by_signature[resolution.based_on_item_signature] = resolution
+
     item_views = tuple(
         _item_view(
             item,
             tuple(evidence_by_item[item.id]),
             tuple(issues_by_item[item.id]),
+            effective_by_signature.get(item.item_signature),
+            tuple(history_by_signature[item.item_signature]),
         )
         for item in item_models
     )
@@ -519,10 +848,187 @@ def load_implementation_contract(
     )
 
 
+def list_implementation_contract_versions(
+    session: Session,
+    document_id: str,
+) -> tuple[ImplementationContractVersionSummaryView, ...]:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise ImplementationContractNotFoundError("Document not found")
+    versions = session.scalars(
+        select(ImplementationContractVersion)
+        .where(ImplementationContractVersion.document_id == document_id)
+        .order_by(
+            ImplementationContractVersion.created_at.desc(),
+            ImplementationContractVersion.id.desc(),
+        )
+    ).all()
+    summaries: list[ImplementationContractVersionSummaryView] = []
+    for version in versions:
+        map_version = session.get(ResearchMapVersion, version.research_map_version_id)
+        is_current = (
+            document.status == "completed"
+            and document.processed_content_hash == document.content_hash
+            and version.source_content_hash == document.content_hash
+            and map_version is not None
+            and map_version.document_id == document.id
+            and map_version.source_content_hash == document.content_hash
+            and version.research_map_signature
+            == _research_map_signature(session, map_version)
+        )
+        summaries.append(
+            ImplementationContractVersionSummaryView(
+                id=version.id,
+                document_id=version.document_id,
+                research_map_version_id=version.research_map_version_id,
+                previous_version_id=version.previous_version_id,
+                source_content_hash=version.source_content_hash,
+                research_map_signature=version.research_map_signature,
+                schema_version=version.schema_version,
+                provider=version.provider,
+                model_name=version.model_name,
+                status=version.status,
+                readiness=version.readiness,
+                is_active=version.is_active,
+                is_current=is_current,
+                is_stale=not is_current,
+                created_at=version.created_at,
+                completed_at=version.completed_at,
+            )
+        )
+    return tuple(summaries)
+
+
+def activate_implementation_contract(
+    session: Session,
+    version_id: str,
+) -> ImplementationContractView:
+    target = session.get(ImplementationContractVersion, version_id)
+    if target is None:
+        raise ImplementationContractNotFoundError("Implementation Contract not found")
+    if target.status not in {"complete", "partial"} or target.completed_at is None:
+        raise ImplementationContractConflictError(
+            "Only complete or partial Implementation Contracts can be activated"
+        )
+    with session.begin_nested():
+        current_versions = session.scalars(
+            select(ImplementationContractVersion).where(
+                ImplementationContractVersion.document_id == target.document_id,
+                ImplementationContractVersion.is_active.is_(True),
+                ImplementationContractVersion.id != target.id,
+            )
+        ).all()
+        for version in current_versions:
+            version.is_active = False
+        session.flush()
+        target.is_active = True
+        session.flush()
+    return load_implementation_contract(session, target.id)
+
+
+def diff_implementation_contracts(
+    session: Session,
+    version_id: str,
+    against_version_id: str,
+) -> ImplementationContractDiffView:
+    version = session.get(ImplementationContractVersion, version_id)
+    against = session.get(ImplementationContractVersion, against_version_id)
+    if version is None or against is None:
+        raise ImplementationContractNotFoundError("Implementation Contract not found")
+    if version.document_id != against.document_id:
+        raise ImplementationContractConflictError(
+            "Implementation Contract versions must belong to the same document"
+        )
+    all_items = session.scalars(
+        select(ImplementationContractItem).where(
+            ImplementationContractItem.contract_version_id.in_((version.id, against.id))
+        )
+    ).all()
+    items_by_version: defaultdict[str, dict[str, ImplementationContractItem]] = (
+        defaultdict(dict)
+    )
+    for item in all_items:
+        items_by_version[item.contract_version_id][item.item_key] = item
+    item_ids = [item.id for item in all_items]
+    evidence_hashes_by_item: defaultdict[str, list[str]] = defaultdict(list)
+    if item_ids:
+        for item_id, source_quote_hash in session.execute(
+            select(
+                ImplementationContractEvidence.item_id,
+                ImplementationContractEvidence.source_quote_hash,
+            )
+            .where(ImplementationContractEvidence.item_id.in_(item_ids))
+            .order_by(
+                ImplementationContractEvidence.item_id,
+                ImplementationContractEvidence.source_quote_hash,
+            )
+        ).all():
+            evidence_hashes_by_item[item_id].append(source_quote_hash)
+    differences: list[ContractItemDiffView] = []
+    for item_key in set(items_by_version[version.id]) | set(
+        items_by_version[against.id]
+    ):
+        current = items_by_version[version.id].get(item_key)
+        previous = items_by_version[against.id].get(item_key)
+        classification = _diff_classification(
+            current,
+            previous,
+            evidence_hashes_by_item,
+        )
+        representative = current or previous
+        if representative is None:
+            raise ImplementationContractConflictError(
+                "Implementation Contract diff contains no comparable item"
+            )
+        differences.append(
+            ContractItemDiffView(
+                item_key=item_key,
+                classification=classification,
+                version_item_id=current.id if current is not None else None,
+                against_item_id=previous.id if previous is not None else None,
+                section_order=_SECTION_ORDER[
+                    validate_contract_section(representative.section)
+                ],
+                display_order=representative.display_order,
+            )
+        )
+    differences.sort(
+        key=lambda item: (item.section_order, item.display_order, item.item_key)
+    )
+    return ImplementationContractDiffView(
+        version_id=version.id,
+        against_version_id=against.id,
+        items=tuple(differences),
+    )
+
+
+def _diff_classification(
+    current: ImplementationContractItem | None,
+    previous: ImplementationContractItem | None,
+    evidence_hashes_by_item: dict[str, list[str]],
+) -> str:
+    if previous is None:
+        return validate_diff_classification("added")
+    if current is None:
+        return validate_diff_classification("removed")
+    if current.draft_value_json != previous.draft_value_json:
+        return validate_diff_classification("value_changed")
+    if current.origin != previous.origin:
+        return validate_diff_classification("origin_changed")
+    if (
+        evidence_hashes_by_item[current.id] != evidence_hashes_by_item[previous.id]
+        or current.rationale != previous.rationale
+    ):
+        return validate_diff_classification("evidence_changed")
+    return validate_diff_classification("unchanged")
+
+
 def _item_view(
     item: ImplementationContractItem,
     evidence: tuple[ContractEvidenceView, ...],
     issues: tuple[ContractIssueView, ...],
+    resolution: ContractResolutionView | None,
+    resolution_history: tuple[ContractResolutionView, ...],
 ) -> ContractItemView:
     section = validate_contract_section(item.section)
     item_type = validate_contract_item_type(item.item_type)
@@ -532,7 +1038,7 @@ def _item_view(
         if item.draft_value_json is not None
         else None
     )
-    ContractItemDraft(
+    draft = ContractItemDraft(
         item_key=item.item_key,
         section=section,
         item_type=item_type,
@@ -543,15 +1049,33 @@ def _item_view(
         is_optional=item.is_optional,
         display_order=item.display_order,
     )
+    resolution_draft = (
+        ContractResolutionDraft(
+            status=validate_resolution_status(resolution.status),
+            value=resolution.resolved_value,
+            reason=resolution.reason,
+        )
+        if resolution is not None
+        else None
+    )
+    effective = audit_contract(
+        (
+            EffectiveContractItem(
+                draft=draft,
+                evidence=(),
+                resolution=resolution_draft,
+            ),
+        )
+    ).items[0]
     return ContractItemView(
         id=item.id,
         item_key=item.item_key,
         section=section,
         item_type=item_type,
         draft_value=value,
-        effective_value=value,
+        effective_value=effective.effective_value,
         origin=origin,
-        effective_origin=origin,
+        effective_origin=effective.effective_origin,
         rationale=item.rationale,
         is_blocking=item.is_blocking,
         is_optional=item.is_optional,
@@ -559,4 +1083,99 @@ def _item_view(
         item_signature=item.item_signature,
         evidence=evidence,
         issues=issues,
+        resolution=resolution,
+        resolution_history=resolution_history,
     )
+
+
+def _load_resolution_models(
+    session: Session,
+    lineage_version_ids: set[str],
+    item_ids: Sequence[str],
+    item_signatures: set[str],
+) -> Sequence[ImplementationContractResolution]:
+    if not item_ids and not item_signatures:
+        return ()
+    return session.scalars(
+        select(ImplementationContractResolution)
+        .join(
+            ImplementationContractItem,
+            ImplementationContractResolution.item_id == ImplementationContractItem.id,
+        )
+        .join(
+            ImplementationContractVersion,
+            ImplementationContractItem.contract_version_id
+            == ImplementationContractVersion.id,
+        )
+        .where(
+            ImplementationContractResolution.based_on_contract_version_id.in_(
+                lineage_version_ids
+            ),
+            (
+                ImplementationContractResolution.item_id.in_(item_ids)
+                | ImplementationContractResolution.based_on_item_signature.in_(
+                    item_signatures
+                )
+            ),
+        )
+        .order_by(
+            ImplementationContractResolution.resolved_at,
+            ImplementationContractResolution.revision_number,
+            ImplementationContractResolution.id,
+        )
+    ).all()
+
+
+def _lineage_version_ids(
+    session: Session,
+    version: ImplementationContractVersion,
+) -> set[str]:
+    rows = session.execute(
+        select(
+            ImplementationContractVersion.id,
+            ImplementationContractVersion.previous_version_id,
+        ).where(ImplementationContractVersion.document_id == version.document_id)
+    ).all()
+    previous_by_id = {version_id: previous_id for version_id, previous_id in rows}
+    lineage: set[str] = set()
+    current_id: str | None = version.id
+    while current_id is not None:
+        if current_id in lineage:
+            raise ImplementationContractConflictError(
+                "Implementation Contract version lineage contains a cycle"
+            )
+        lineage.add(current_id)
+        current_id = previous_by_id.get(current_id)
+    return lineage
+
+
+def _resolution_view(
+    resolution: ImplementationContractResolution,
+) -> ContractResolutionView:
+    value = (
+        decode_contract_value(json.loads(resolution.resolved_value_json))
+        if resolution.resolved_value_json is not None
+        else None
+    )
+    draft = ContractResolutionDraft(
+        status=validate_resolution_status(resolution.status),
+        value=value,
+        reason=resolution.reason,
+    )
+    return ContractResolutionView(
+        id=resolution.id,
+        item_id=resolution.item_id,
+        revision_number=resolution.revision_number,
+        supersedes_resolution_id=resolution.supersedes_resolution_id,
+        status=draft.status,
+        resolved_value=draft.value,
+        reason=draft.reason,
+        based_on_contract_version_id=resolution.based_on_contract_version_id,
+        based_on_item_signature=resolution.based_on_item_signature,
+        request_id=resolution.request_id,
+        resolved_at=_as_utc(resolution.resolved_at),
+    )
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
