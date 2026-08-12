@@ -1,0 +1,25 @@
+# Signal Persistence and Expected Returns
+
+Research Question: Does a persistent firm-level operating signal predict future stock returns?
+
+Data Source: The study uses monthly CRSP returns and annual accounting observations from Compustat.
+
+Sample: The sample covers United States common stocks from January 1985 through December 2020 and excludes prices below five dollars.
+
+Signal: At each June formation date, the signal is the firm's operating profitability divided by lagged book equity.
+
+Portfolio: Stocks are sorted into value-weighted deciles, and the strategy buys the highest decile and sells the lowest decile.
+
+Rebalancing: Portfolios are rebalanced monthly while the accounting signal is refreshed each June.
+
+Method: The analysis estimates time-series regressions of portfolio excess returns with Newey-West standard errors.
+
+Benchmark: The benchmark specification uses the Fama-French five-factor model.
+
+Primary Result: The high-minus-low strategy earns 0.80 percent per month with a t-statistic of 3.10.
+
+Robustness: The return spread remains positive in large stocks, after excluding microcaps, and across two equal-length subsamples.
+
+Transaction Costs: The paper does not report turnover-adjusted transaction costs or implementable net returns.
+
+Limitations: The design is observational, depends on accounting availability, and does not establish a causal mechanism.
