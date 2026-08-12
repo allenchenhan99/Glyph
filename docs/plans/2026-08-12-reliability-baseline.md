@@ -323,8 +323,11 @@ git commit -m "fix: replace reader snapshots atomically"
 **Files:**
 - Modify: `.env.example`
 - Modify: `backend/src/glyph/config.py`
+- Modify: `backend/src/glyph/cli_ai.py`
 - Modify: `backend/src/glyph/ocr.py`
 - Modify: `backend/src/glyph/documents.py`
+- Modify: `backend/tests/test_cli_ai.py`
+- Modify: `backend/tests/test_config.py`
 - Modify: `backend/tests/test_ocr.py`
 - Modify: `backend/tests/test_documents.py`
 

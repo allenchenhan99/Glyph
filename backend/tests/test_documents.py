@@ -1,3 +1,6 @@
+import subprocess
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from glyph.main import create_app
@@ -109,3 +112,69 @@ def test_missing_source_is_retained_and_restored_using_hash_state(
     source.write_bytes(b"# Changed\n\nDifferent bytes.")
     changed_document = client.get("/api/documents").json()[0]
     assert changed_document["status"] == "stale"
+
+
+def test_page_render_timeout_returns_safe_gateway_timeout(tmp_path, monkeypatch):
+    book = tmp_path / "book"
+    book.mkdir()
+    source = book / "sample.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
+    monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GLYPH_PAGE_RENDER_TIMEOUT_SECONDS", "13")
+    app = create_app()
+    client = TestClient(app, raise_server_exceptions=False)
+    document_id = client.get("/api/documents").json()[0]["id"]
+    observed = {}
+
+    monkeypatch.setattr("glyph.documents.shutil.which", lambda _: "/opt/bin/pdftoppm")
+
+    def timeout_when_bounded(command, **kwargs):
+        observed["command"] = command
+        observed["timeout"] = kwargs.get("timeout")
+        if kwargs.get("timeout") is None:
+            return subprocess.CompletedProcess(command, 1, "", "missing timeout")
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr("glyph.documents.subprocess.run", timeout_when_bounded)
+
+    response = client.get(f"/api/documents/{document_id}/pages/1/image")
+
+    assert response.status_code == 504
+    assert response.json()["detail"] == "Page rendering timed out after 13 seconds"
+    assert observed["command"][0] == "/opt/bin/pdftoppm"
+    assert observed["timeout"] == 13
+    assert str(source) not in response.json()["detail"]
+
+
+def test_page_image_cache_is_invalidated_when_source_changes(tmp_path, monkeypatch):
+    book = tmp_path / "book"
+    book.mkdir()
+    source = book / "sample.pdf"
+    source.write_bytes(b"%PDF-1.4 original")
+    monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
+    monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
+    app = create_app()
+    client = TestClient(app)
+    document_id = client.get("/api/documents").json()[0]["id"]
+    render_count = 0
+
+    monkeypatch.setattr("glyph.documents.shutil.which", lambda _: "/opt/bin/pdftoppm")
+
+    def render_page(command, **kwargs):
+        nonlocal render_count
+        render_count += 1
+        output_path = Path(command[-1]).with_suffix(".png")
+        output_path.write_bytes(f"render-{render_count}".encode())
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("glyph.documents.subprocess.run", render_page)
+
+    first_image = client.get(f"/api/documents/{document_id}/pages/1/image")
+    source.write_bytes(b"%PDF-1.4 changed")
+    client.get("/api/documents")
+    second_image = client.get(f"/api/documents/{document_id}/pages/1/image")
+
+    assert first_image.content == b"render-1"
+    assert second_image.content == b"render-2"
+    assert render_count == 2

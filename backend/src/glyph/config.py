@@ -19,6 +19,8 @@ class Settings:
     cli_timeout_seconds: int = 300
     cli_concurrency: int = 3
     max_upload_bytes: int = 50 * 1024 * 1024
+    ocr_timeout_seconds: int = 300
+    page_render_timeout_seconds: int = 30
 
 
 def positive_int_from_env(name: str, default: int) -> int:
@@ -55,5 +57,9 @@ def get_settings() -> Settings:
         cli_concurrency=int(os.environ.get("GLYPH_CLI_CONCURRENCY", "3")),
         max_upload_bytes=positive_int_from_env(
             "GLYPH_MAX_UPLOAD_BYTES", 50 * 1024 * 1024
+        ),
+        ocr_timeout_seconds=positive_int_from_env("GLYPH_OCR_TIMEOUT_SECONDS", 300),
+        page_render_timeout_seconds=positive_int_from_env(
+            "GLYPH_PAGE_RENDER_TIMEOUT_SECONDS", 30
         ),
     )

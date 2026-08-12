@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
+import shutil
+
+# CLI adapters use resolved argv, no shell, and explicit timeouts.
+import subprocess  # nosec B404
 import tempfile
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -205,12 +208,13 @@ def build_cli_command(provider: str, schema: str, model: str | None) -> list[str
 
 
 def run_cli(command: list[str], prompt: str, timeout_seconds: int) -> dict:
-    executable = command[0]
+    executable = Path(command[0]).name
     try:
         if executable == "codex":
             return run_codex(command, prompt, timeout_seconds)
-        completed = subprocess.run(
-            command,
+        resolved_command = resolve_cli_command(command, executable)
+        completed = subprocess.run(  # nosec B603
+            resolved_command,
             input=prompt,
             text=True,
             capture_output=True,
@@ -224,7 +228,9 @@ def run_cli(command: list[str], prompt: str, timeout_seconds: int) -> dict:
             f"{executable} CLI timed out after {timeout_seconds} seconds"
         ) from exc
     if completed.returncode != 0:
-        raise CliAiError(f"{executable} CLI failed: {completed.stderr.strip()}")
+        raise CliAiError(
+            f"{executable} CLI failed with exit code {completed.returncode}"
+        )
     try:
         envelope = json.loads(completed.stdout)
         structured = envelope.get("structured_output")
@@ -247,10 +253,10 @@ def run_codex(command: list[str], prompt: str, timeout_seconds: int) -> dict:
             schema_path = Path(directory) / "schema.json"
             output_path = Path(directory) / "result.json"
             schema_path.write_text(schema, encoding="utf-8")
-            actual_command = command.copy()
+            actual_command = resolve_cli_command(command, "codex")
             actual_command[schema_index] = str(schema_path)
             actual_command[-1:-1] = ["--output-last-message", str(output_path)]
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec B603
                 actual_command,
                 input=prompt,
                 text=True,
@@ -259,7 +265,9 @@ def run_codex(command: list[str], prompt: str, timeout_seconds: int) -> dict:
                 check=False,
             )
             if completed.returncode != 0:
-                raise CliAiError(f"codex CLI failed: {completed.stderr.strip()}")
+                raise CliAiError(
+                    f"codex CLI failed with exit code {completed.returncode}"
+                )
             return json.loads(output_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise CliAiError("codex CLI is not installed") from exc
@@ -269,6 +277,13 @@ def run_codex(command: list[str], prompt: str, timeout_seconds: int) -> dict:
         ) from exc
     except (json.JSONDecodeError, OSError) as exc:
         raise CliAiError("codex CLI returned invalid structured output") from exc
+
+
+def resolve_cli_command(command: list[str], executable_name: str) -> list[str]:
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise CliAiError(f"{executable_name} CLI is not installed")
+    return [executable, *command[1:]]
 
 
 def validate_batch_response(response: dict, blocks) -> dict[str, dict]:

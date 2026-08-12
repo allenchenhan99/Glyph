@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-import subprocess
+
+# Page rendering uses a resolved executable, fixed argv, and no shell.
+import subprocess  # nosec B404
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -388,37 +390,50 @@ def get_page_image(
         return FileResponse(source_path)
     if document.file_type != "pdf":
         raise HTTPException(status_code=404, detail="Page image unavailable")
-    if shutil.which("pdftoppm") is None:
+    executable = shutil.which("pdftoppm")
+    if executable is None:
         raise HTTPException(
             status_code=503, detail="pdftoppm is required for page images"
         )
 
     page_dir = settings.data_dir / "page-images" / document.id
     page_dir.mkdir(parents=True, exist_ok=True)
-    output_prefix = page_dir / f"page-{page_number:04d}"
+    output_prefix = page_dir / (f"page-{page_number:04d}-{document.content_hash[:16]}")
     image_path = output_prefix.with_suffix(".png")
     if not image_path.exists():
-        completed = subprocess.run(
-            [
-                "pdftoppm",
-                "-f",
-                str(page_number),
-                "-l",
-                str(page_number),
-                "-singlefile",
-                "-png",
-                "-r",
-                "144",
-                str(source_path),
-                str(output_prefix),
-            ],
-            capture_output=True,
-            check=False,
-            text=True,
-        )
+        try:
+            completed = subprocess.run(  # nosec B603
+                [
+                    executable,
+                    "-f",
+                    str(page_number),
+                    "-l",
+                    str(page_number),
+                    "-singlefile",
+                    "-png",
+                    "-r",
+                    "144",
+                    str(source_path),
+                    str(output_prefix),
+                ],
+                capture_output=True,
+                check=False,
+                text=True,
+                timeout=settings.page_render_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            image_path.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    "Page rendering timed out after "
+                    f"{settings.page_render_timeout_seconds} seconds"
+                ),
+            ) from exc
         if completed.returncode != 0 or not image_path.exists():
+            image_path.unlink(missing_ok=True)
             raise HTTPException(
                 status_code=500,
-                detail=completed.stderr.strip() or "Could not render page image",
+                detail="Could not render page image",
             )
     return FileResponse(image_path, media_type="image/png")

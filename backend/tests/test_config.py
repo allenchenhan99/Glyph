@@ -16,3 +16,24 @@ def test_upload_limit_must_be_positive(monkeypatch):
 
     with pytest.raises(ValueError, match="GLYPH_MAX_UPLOAD_BYTES must be positive"):
         get_settings()
+
+
+def test_external_process_timeouts_have_conservative_defaults(monkeypatch):
+    monkeypatch.delenv("GLYPH_OCR_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("GLYPH_PAGE_RENDER_TIMEOUT_SECONDS", raising=False)
+
+    settings = get_settings()
+
+    assert getattr(settings, "ocr_timeout_seconds", None) == 300
+    assert getattr(settings, "page_render_timeout_seconds", None) == 30
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["GLYPH_OCR_TIMEOUT_SECONDS", "GLYPH_PAGE_RENDER_TIMEOUT_SECONDS"],
+)
+def test_external_process_timeouts_must_be_positive(monkeypatch, name):
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(ValueError, match=f"{name} must be positive"):
+        get_settings()
