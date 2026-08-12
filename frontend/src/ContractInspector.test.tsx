@@ -64,6 +64,29 @@ describe('ContractInspector', () => {
     )
   })
 
+  it('names decision fields for browser form semantics', () => {
+    const view = render(<ContractInspector {...defaultProps} item={item('item-thesis')} />)
+
+    expect(screen.getByLabelText('Corrected value')).toHaveAttribute(
+      'name',
+      'contract-item-item-thesis-value'
+    )
+    expect(screen.getByLabelText('Review reason')).toHaveAttribute(
+      'name',
+      'contract-item-item-thesis-reason'
+    )
+
+    view.rerender(<ContractInspector {...defaultProps} item={item('item-open')} />)
+    expect(screen.getByLabelText('Decision value')).toHaveAttribute(
+      'name',
+      'contract-item-item-open-value'
+    )
+    expect(screen.getByLabelText('Decision reason')).toHaveAttribute(
+      'name',
+      'contract-item-item-open-reason'
+    )
+  })
+
   it('shows at least two anchors and rationale for derived items', () => {
     render(<ContractInspector {...defaultProps} item={item('item-data')} />)
 

@@ -240,6 +240,7 @@ export function ContractInspector({
           <label>
             Decision value
             <input
+              name={`contract-item-${item.id}-value`}
               value={decisionValue}
               onChange={(event) => setDecisionValue(event.currentTarget.value)}
               aria-invalid={validation?.startsWith('Enter the implementation') || undefined}
@@ -248,6 +249,7 @@ export function ContractInspector({
           <label>
             Decision reason
             <textarea
+              name={`contract-item-${item.id}-reason`}
               value={decisionReason}
               onChange={(event) => setDecisionReason(event.currentTarget.value)}
               aria-invalid={validation?.startsWith('Explain') || undefined}
@@ -305,6 +307,7 @@ export function ContractInspector({
           <label>
             Corrected value
             <input
+              name={`contract-item-${item.id}-value`}
               value={decisionValue}
               onChange={(event) => setDecisionValue(event.currentTarget.value)}
               aria-invalid={validation?.startsWith('Enter the corrected') || undefined}
@@ -313,6 +316,7 @@ export function ContractInspector({
           <label>
             Review reason
             <textarea
+              name={`contract-item-${item.id}-reason`}
               value={decisionReason}
               onChange={(event) => setDecisionReason(event.currentTarget.value)}
               aria-invalid={validation?.startsWith('Explain') || undefined}

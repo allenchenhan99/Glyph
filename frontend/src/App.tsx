@@ -510,21 +510,15 @@ export function App() {
       itemId: item.id,
       resolution: optimisticResolution
     })
+    let saved: ContractResolution
     try {
-      const saved = await resolveImplementationContractItem(item.id, {
+      saved = await resolveImplementationContractItem(item.id, {
         request_id: requestId,
         status,
         based_on_item_signature: item.item_signature,
         resolved_value: resolvedValue,
         reason
       })
-      dispatchContract({
-        type: 'resolutionSaved',
-        requestId,
-        itemId: item.id,
-        resolution: saved
-      })
-      await refreshDocuments()
     } catch (error) {
       console.error(error)
       const message =
@@ -532,6 +526,26 @@ export function App() {
           ? `${error.message} Reload the Implementation Contract and decide again.`
           : errorMessage(error, 'The decision was not saved. Try again.')
       dispatchContract({ type: 'resolutionConflict', requestId, message })
+      return
+    }
+    dispatchContract({
+      type: 'resolutionSaved',
+      requestId,
+      itemId: item.id,
+      resolution: saved
+    })
+    try {
+      const refreshedContract = await getActiveImplementationContract(contract.document_id)
+      if (activeDocumentId.current === contract.document_id) {
+        dispatchContract({
+          type: 'contractLoaded',
+          documentId: contract.document_id,
+          contract: refreshedContract
+        })
+      }
+      await refreshDocuments()
+    } catch (error) {
+      console.error(error)
     }
   }
 
