@@ -1,7 +1,7 @@
 # Research Map v1 completion audit
 
-Date: 2026-08-12  
-Branch: `feat/research-map`  
+Date: 2026-08-12
+Branch: `feat/research-map`
 Decision: ready for pull-request review
 
 ## Scope checked
