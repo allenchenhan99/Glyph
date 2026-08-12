@@ -13,6 +13,7 @@ from glyph.research_jobs import (
     list_queued_job_ids,
     recover_interrupted_jobs,
 )
+from glyph.research_routes import router as research_router
 
 
 def create_app() -> FastAPI:
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.include_router(documents_router)
+    app.include_router(research_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

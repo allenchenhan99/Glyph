@@ -3,12 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from glyph.models import (
@@ -49,6 +49,7 @@ class ReviewView:
     corrected_claim_text: str | None
     review_note: str | None
     revision_number: int
+    supersedes_review_id: str | None
     reviewed_at: datetime
 
 
@@ -117,6 +118,52 @@ class ResearchMapView:
     issues: tuple[IssueView, ...]
 
 
+@dataclass(frozen=True)
+class ResearchMapVersionSummaryView:
+    id: str
+    document_id: str
+    previous_version_id: str | None
+    source_content_hash: str
+    schema_version: str
+    provider: str
+    model_name: str | None
+    status: str
+    is_active: bool
+    is_current: bool
+    is_stale: bool
+    created_at: datetime
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ReviewRecordView:
+    id: str
+    node_id: str
+    status: str
+    corrected_claim_text: str | None
+    review_note: str | None
+    based_on_map_version_id: str
+    based_on_node_signature: str
+    revision_number: int
+    supersedes_review_id: str | None
+    reviewed_at: datetime
+
+
+@dataclass(frozen=True)
+class NodeDiffView:
+    node_key: str
+    classification: str
+    version_node_id: str | None
+    against_node_id: str | None
+
+
+@dataclass(frozen=True)
+class ResearchMapDiffView:
+    version_id: str
+    against_version_id: str
+    nodes: tuple[NodeDiffView, ...]
+
+
 class ResearchMapService:
     def __init__(
         self,
@@ -148,18 +195,7 @@ class ResearchMapService:
         return self._persist(document, draft, accepted, audit)
 
     def _require_current_reader(self, document_id: str) -> Document:
-        document = self._session.get(Document, document_id)
-        if document is None:
-            raise ResearchMapNotFoundError("Document not found")
-        if (
-            document.status != "completed"
-            or document.processed_content_hash is None
-            or document.processed_content_hash != document.content_hash
-        ):
-            raise ResearchMapConflictError(
-                "Research Map requires a current completed Reader snapshot"
-            )
-        return document
+        return require_current_reader(self._session, document_id)
 
     def _current_blocks(self, document: Document) -> Sequence[Block]:
         return self._session.scalars(
@@ -382,6 +418,194 @@ def load_active_research_map(session: Session, document_id: str) -> ResearchMapV
     return load_research_map(session, version_id)
 
 
+def require_current_reader(session: Session, document_id: str) -> Document:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise ResearchMapNotFoundError("Document not found")
+    if (
+        document.status != "completed"
+        or document.processed_content_hash is None
+        or document.processed_content_hash != document.content_hash
+    ):
+        raise ResearchMapConflictError(
+            "Research Map requires a current completed Reader snapshot"
+        )
+    has_current_blocks = session.scalar(
+        select(Block.id).where(
+            Block.document_id == document.id,
+            Block.source_content_hash == document.processed_content_hash,
+        )
+    )
+    if has_current_blocks is None:
+        raise ResearchMapConflictError("Document has no current Reader blocks")
+    return document
+
+
+def list_research_map_versions(
+    session: Session,
+    document_id: str,
+) -> tuple[ResearchMapVersionSummaryView, ...]:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise ResearchMapNotFoundError("Document not found")
+    versions = session.scalars(
+        select(ResearchMapVersion)
+        .where(ResearchMapVersion.document_id == document_id)
+        .order_by(
+            ResearchMapVersion.created_at.desc(),
+            ResearchMapVersion.id.desc(),
+        )
+    ).all()
+    document_is_current = (
+        document.status == "completed"
+        and document.processed_content_hash == document.content_hash
+    )
+    return tuple(
+        ResearchMapVersionSummaryView(
+            id=version.id,
+            document_id=version.document_id,
+            previous_version_id=version.previous_version_id,
+            source_content_hash=version.source_content_hash,
+            schema_version=version.schema_version,
+            provider=version.provider,
+            model_name=version.model_name,
+            status=version.status,
+            is_active=version.is_active,
+            is_current=(
+                document_is_current
+                and version.source_content_hash == document.content_hash
+            ),
+            is_stale=(
+                not document_is_current
+                or version.source_content_hash != document.content_hash
+            ),
+            created_at=version.created_at,
+            completed_at=version.completed_at,
+        )
+        for version in versions
+    )
+
+
+def append_node_review(
+    session: Session,
+    node_id: str,
+    *,
+    status: str,
+    based_on_node_signature: str,
+    corrected_claim_text: str | None,
+    review_note: str | None,
+) -> ReviewRecordView:
+    node = session.get(ResearchNode, node_id)
+    if node is None:
+        raise ResearchMapNotFoundError("Research node not found")
+    if node.node_signature != based_on_node_signature:
+        raise ResearchMapConflictError(
+            "Review is based on an obsolete Research Map node signature"
+        )
+    if status == "corrected" and not (
+        corrected_claim_text and corrected_claim_text.strip()
+    ):
+        raise ValueError("corrected_claim_text is required for corrected reviews")
+    corrected_value = (
+        corrected_claim_text.strip()
+        if status == "corrected" and corrected_claim_text is not None
+        else None
+    )
+    version = session.get(ResearchMapVersion, node.map_version_id)
+    if version is None:
+        raise ResearchMapNotFoundError("Research Map not found")
+    latest_effective = session.scalar(
+        select(ResearchNodeReview)
+        .join(ResearchNode, ResearchNodeReview.node_id == ResearchNode.id)
+        .join(
+            ResearchMapVersion,
+            ResearchNode.map_version_id == ResearchMapVersion.id,
+        )
+        .where(
+            ResearchMapVersion.document_id == version.document_id,
+            ResearchNodeReview.based_on_node_signature == node.node_signature,
+        )
+        .order_by(
+            ResearchNodeReview.reviewed_at.desc(),
+            ResearchNodeReview.revision_number.desc(),
+            ResearchNodeReview.id.desc(),
+        )
+    )
+    latest_revision = session.scalar(
+        select(func.max(ResearchNodeReview.revision_number)).where(
+            ResearchNodeReview.node_id == node.id
+        )
+    )
+    review = ResearchNodeReview(
+        id=str(uuid4()),
+        node_id=node.id,
+        revision_number=(latest_revision or 0) + 1,
+        supersedes_review_id=(
+            latest_effective.id if latest_effective is not None else None
+        ),
+        status=status,
+        corrected_claim_text=corrected_value,
+        review_note=review_note.strip()
+        if review_note and review_note.strip()
+        else None,
+        based_on_map_version_id=node.map_version_id,
+        based_on_node_signature=node.node_signature,
+    )
+    session.add(review)
+    session.flush()
+    return _review_record_view(review)
+
+
+def diff_research_maps(
+    session: Session,
+    version_id: str,
+    against_version_id: str,
+) -> ResearchMapDiffView:
+    version = session.get(ResearchMapVersion, version_id)
+    against = session.get(ResearchMapVersion, against_version_id)
+    if version is None or against is None:
+        raise ResearchMapNotFoundError("Research Map not found")
+    if version.document_id != against.document_id:
+        raise ResearchMapConflictError(
+            "Research Map versions must belong to the same document"
+        )
+    version_nodes = _nodes_by_key(session, version.id)
+    against_nodes = _nodes_by_key(session, against.id)
+    version_evidence = _evidence_hashes_by_node(session, version_nodes.values())
+    against_evidence = _evidence_hashes_by_node(session, against_nodes.values())
+    diffs: list[NodeDiffView] = []
+    for node_key in sorted(set(version_nodes) | set(against_nodes)):
+        current = version_nodes.get(node_key)
+        previous = against_nodes.get(node_key)
+        if current is None:
+            classification = "removed"
+        elif previous is None:
+            classification = "added"
+        elif current.node_signature == previous.node_signature:
+            classification = "unchanged"
+        elif _normalized_claim(current.claim_text) != _normalized_claim(
+            previous.claim_text
+        ):
+            classification = "claim_changed"
+        elif version_evidence[current.id] != against_evidence[previous.id]:
+            classification = "evidence_changed"
+        else:
+            classification = "claim_changed"
+        diffs.append(
+            NodeDiffView(
+                node_key=node_key,
+                classification=classification,
+                version_node_id=current.id if current is not None else None,
+                against_node_id=previous.id if previous is not None else None,
+            )
+        )
+    return ResearchMapDiffView(
+        version_id=version.id,
+        against_version_id=against.id,
+        nodes=tuple(diffs),
+    )
+
+
 def activate_research_map(session: Session, version_id: str) -> ResearchMapVersion:
     version = session.get(ResearchMapVersion, version_id)
     if version is None:
@@ -492,6 +716,7 @@ def _node_view(
             corrected_claim_text=review.corrected_claim_text,
             review_note=review.review_note,
             revision_number=review.revision_number,
+            supersedes_review_id=review.supersedes_review_id,
             reviewed_at=review.reviewed_at,
         )
         if review is not None
@@ -531,6 +756,63 @@ def _issue_view(issue: ResearchMapIssue) -> IssueView:
         severity=issue.severity,
         message=issue.message,
     )
+
+
+def _review_record_view(review: ResearchNodeReview) -> ReviewRecordView:
+    return ReviewRecordView(
+        id=review.id,
+        node_id=review.node_id,
+        status=review.status,
+        corrected_claim_text=review.corrected_claim_text,
+        review_note=review.review_note,
+        based_on_map_version_id=review.based_on_map_version_id,
+        based_on_node_signature=review.based_on_node_signature,
+        revision_number=review.revision_number,
+        supersedes_review_id=review.supersedes_review_id,
+        reviewed_at=review.reviewed_at,
+    )
+
+
+def _nodes_by_key(
+    session: Session,
+    version_id: str,
+) -> dict[str, ResearchNode]:
+    return {
+        node.node_key: node
+        for node in session.scalars(
+            select(ResearchNode).where(ResearchNode.map_version_id == version_id)
+        ).all()
+    }
+
+
+def _evidence_hashes_by_node(
+    session: Session,
+    nodes: Iterable[ResearchNode],
+) -> defaultdict[str, tuple[str, ...]]:
+    node_ids = [node.id for node in nodes]
+    hashes: defaultdict[str, list[str]] = defaultdict(list)
+    if node_ids:
+        rows = session.execute(
+            select(
+                ResearchEvidence.node_id,
+                ResearchEvidence.source_quote_hash,
+            )
+            .where(ResearchEvidence.node_id.in_(node_ids))
+            .order_by(
+                ResearchEvidence.node_id,
+                ResearchEvidence.source_quote_hash,
+            )
+        ).all()
+        for node_id, source_quote_hash in rows:
+            hashes[node_id].append(source_quote_hash)
+    return defaultdict(
+        tuple,
+        {node_id: tuple(values) for node_id, values in hashes.items()},
+    )
+
+
+def _normalized_claim(claim: str) -> str:
+    return " ".join(claim.split()).casefold()
 
 
 def _utc_now() -> datetime:
