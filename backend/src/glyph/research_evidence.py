@@ -28,6 +28,10 @@ class InvalidEvidenceError(ValueError):
     """Raised when an evidence anchor cannot be proven against Reader text."""
 
 
+class ExactQuoteError(ValueError):
+    """Raised when text and offsets do not identify one exact Reader span."""
+
+
 @dataclass(frozen=True)
 class EvidenceCandidate:
     block_id: str
@@ -89,13 +93,15 @@ def validate_candidate(
             "Evidence block does not belong to the current Reader snapshot"
         )
 
-    quote_start, quote_end = _resolve_offsets(block.source_text, candidate)
-    actual_quote = block.source_text[quote_start:quote_end]
-    if actual_quote != candidate.quote_text:
-        raise InvalidEvidenceError(
-            "Evidence quote does not match the target Reader block offsets"
+    try:
+        quote_start, quote_end = resolve_exact_quote(
+            block.source_text,
+            candidate.quote_text,
+            candidate.quote_start,
+            candidate.quote_end,
         )
-
+    except ExactQuoteError as exc:
+        raise InvalidEvidenceError(str(exc)) from exc
     relation = validate_evidence_relation(candidate.relation)
     locator_type = validate_locator_type(candidate.locator_type)
     return AcceptedEvidence(
@@ -105,7 +111,7 @@ def validate_candidate(
         quote_end=quote_end,
         relation=relation,
         locator_type=locator_type,
-        source_quote_hash=_quote_hash(
+        source_quote_hash=exact_quote_hash(
             block.id, quote_start, quote_end, candidate.quote_text
         ),
         source_label=candidate.source_label,
@@ -134,36 +140,49 @@ def validate_candidates(
     return tuple(accepted)
 
 
-def _resolve_offsets(
+def resolve_exact_quote(
     source_text: str,
-    candidate: EvidenceCandidate,
+    quote_text: str,
+    quote_start: int | None,
+    quote_end: int | None,
 ) -> tuple[int, int]:
-    if candidate.quote_start is None:
-        first_match = source_text.find(candidate.quote_text)
+    if quote_start is None:
+        if quote_end is not None:
+            raise ExactQuoteError(
+                "quote_start and quote_end must both be provided or both be omitted"
+            )
+        first_match = source_text.find(quote_text)
         if first_match == -1:
-            raise InvalidEvidenceError(
+            raise ExactQuoteError(
                 "Evidence quote does not occur in the target block"
             )
-        if source_text.find(candidate.quote_text, first_match + 1) != -1:
-            raise InvalidEvidenceError(
+        if source_text.find(quote_text, first_match + 1) != -1:
+            raise ExactQuoteError(
                 "Evidence quote occurs more than once; explicit offsets are required"
             )
-        return first_match, first_match + len(candidate.quote_text)
+        return first_match, first_match + len(quote_text)
 
-    quote_start = candidate.quote_start
-    quote_end = candidate.quote_end
     if quote_end is None:
-        raise InvalidEvidenceError(
+        raise ExactQuoteError(
             "quote_start and quote_end must both be provided or both be omitted"
         )
     if quote_start < 0 or quote_end > len(source_text):
-        raise InvalidEvidenceError("Evidence offsets are outside the target block")
+        raise ExactQuoteError("Evidence offsets are outside the target block")
     if quote_end <= quote_start:
-        raise InvalidEvidenceError("Evidence offsets must select non-empty text")
+        raise ExactQuoteError("Evidence offsets must select non-empty text")
+    if source_text[quote_start:quote_end] != quote_text:
+        raise ExactQuoteError(
+            "Evidence quote does not match the target Reader block offsets"
+        )
     return quote_start, quote_end
 
 
-def _quote_hash(block_id: str, quote_start: int, quote_end: int, quote: str) -> str:
+def exact_quote_hash(
+    block_id: str,
+    quote_start: int,
+    quote_end: int,
+    quote: str,
+) -> str:
     canonical = json.dumps(
         [block_id, quote_start, quote_end, quote],
         ensure_ascii=False,
