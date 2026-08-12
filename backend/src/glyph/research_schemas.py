@@ -135,6 +135,16 @@ class ResearchMapVersionOut(AttributeModel):
     completed_at: ApiDateTime | None
 
 
+class ResearchMapLibrarySummaryOut(AttributeModel):
+    version_id: str
+    status: MapStatus
+    is_current: bool
+    is_stale: bool
+    reviewed_core_nodes: int
+    reviewable_core_nodes: int
+    issue_count: int
+
+
 class ResearchNodeReviewRequest(BaseModel):
     status: ReviewStatus
     based_on_node_signature: str = Field(pattern=r"^[0-9a-f]{64}$")

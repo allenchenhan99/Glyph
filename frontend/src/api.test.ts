@@ -8,6 +8,7 @@ import {
   getResearchMapDiff,
   getResearchMapJob,
   getResearchMapVersion,
+  listDocuments,
   listResearchMapVersions,
   processDocument,
   reviewResearchNode
@@ -227,6 +228,39 @@ describe('Research Map API contracts', () => {
       '/api/research-maps/map-1/diff?against=map-0',
       undefined
     )
+  })
+
+  it('validates optional batched Research Map summaries in document rows', async () => {
+    const document = {
+      id: 'doc-1',
+      title: 'sample.pdf',
+      file_type: 'pdf',
+      status: 'completed',
+      research_map: {
+        version_id: 'map-1',
+        status: 'partial',
+        is_current: true,
+        is_stale: false,
+        reviewed_core_nodes: 2,
+        reviewable_core_nodes: 6,
+        issue_count: 3
+      }
+    }
+    const responses = [[document], [{ ...document, research_map: { ...document.research_map, issue_count: -1 } }]]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(responses.shift()), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        )
+      )
+    )
+
+    await expect(listDocuments()).resolves.toEqual([document])
+    await expect(listDocuments()).rejects.toThrow('Unexpected API response shape')
   })
 
   it.each([

@@ -22,6 +22,11 @@ from glyph.pipeline import (
     get_job,
     process_document,
 )
+from glyph.research_maps import (
+    ResearchMapLibrarySummaryView,
+    load_research_map_library_summaries,
+)
+from glyph.research_schemas import ResearchMapLibrarySummaryOut
 from glyph.schemas import BlockOut, DocumentOut, JobOut, ReaderOut, SectionOut
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
@@ -179,12 +184,20 @@ def discover_book_documents(settings: Settings, session: Session) -> list[Docume
     return documents
 
 
-def document_to_out(document: Document) -> DocumentOut:
+def document_to_out(
+    document: Document,
+    research_map: ResearchMapLibrarySummaryView | None = None,
+) -> DocumentOut:
     return DocumentOut(
         id=document.id,
         title=document.title,
         file_type=document.file_type,
         status=document.status,
+        research_map=(
+            ResearchMapLibrarySummaryOut.model_validate(research_map)
+            if research_map is not None
+            else None
+        ),
     )
 
 
@@ -258,7 +271,10 @@ def list_documents(
             unprocessed_status_for_path(settings, source_path),
         )
     session.flush()
-    return [document_to_out(document) for document in documents]
+    summaries = load_research_map_library_summaries(session, documents)
+    return [
+        document_to_out(document, summaries.get(document.id)) for document in documents
+    ]
 
 
 @router.post("/documents/upload", response_model=DocumentOut)

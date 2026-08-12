@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 
 from glyph.main import create_app
 from glyph.models import Block, Document, ResearchMapJob, ResearchNodeReview
@@ -158,6 +158,72 @@ def test_version_list_is_ordered_and_exposes_compact_state(research_api):
     assert [item["is_active"] for item in payload] == [True, False]
     assert all(item["status"] == "partial" for item in payload)
     assert all(item["is_current"] is True for item in payload)
+
+
+def test_document_list_batches_active_map_progress_without_n_plus_one(research_api):
+    app, client, _, document_id = research_api
+    source_dir = app.state.settings.data_dir / "summary-sources"
+    source_dir.mkdir(parents=True)
+    primary_source = source_dir / "paper-1.txt"
+    primary_source.write_text("synthetic source")
+    with app.state.session_factory.begin() as session:
+        primary = session.get(Document, document_id)
+        assert primary is not None
+        primary.source_path = str(primary_source)
+        for index in range(12):
+            source = source_dir / f"paper-{index + 2}.txt"
+            source.write_text(f"source {index}")
+            session.add(
+                Document(
+                    id=f"paper-{index + 2}",
+                    title=f"Paper {index + 2}",
+                    source_path=str(source),
+                    content_hash=f"{index + 1:x}".rjust(64, "0"),
+                    processed_content_hash=None,
+                    file_type="txt",
+                    status="discovered",
+                )
+            )
+
+    version_id = generate_map(app, document_id)
+    active_map = client.get(f"/api/research-maps/{version_id}").json()
+    first_node = active_map["nodes"][0]
+    client.patch(
+        f"/api/research-nodes/{first_node['id']}/review",
+        json={
+            "status": "confirmed",
+            "based_on_node_signature": first_node["node_signature"],
+        },
+    )
+
+    select_count = 0
+
+    def count_selects(_connection, _cursor, statement, _parameters, _context, _many):
+        nonlocal select_count
+        if statement.lstrip().upper().startswith("SELECT"):
+            select_count += 1
+
+    engine = app.state.session_factory.kw["bind"]
+    event.listen(engine, "before_cursor_execute", count_selects)
+    try:
+        response = client.get("/api/documents")
+    finally:
+        event.remove(engine, "before_cursor_execute", count_selects)
+
+    assert response.status_code == 200
+    documents = {item["id"]: item for item in response.json()}
+    summary = documents[document_id]["research_map"]
+    assert summary == {
+        "version_id": version_id,
+        "status": "partial",
+        "is_current": False,
+        "is_stale": True,
+        "reviewed_core_nodes": 1,
+        "reviewable_core_nodes": active_map["reviewable_core_nodes"],
+        "issue_count": len(active_map["issues"]),
+    }
+    assert documents["paper-2"]["research_map"] is None
+    assert select_count <= 6
 
 
 def test_review_routes_append_history_and_apply_effective_correction(research_api):

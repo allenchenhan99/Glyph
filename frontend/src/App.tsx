@@ -257,6 +257,13 @@ export function App() {
                   <p>
                     {document.file_type.toUpperCase()} · {documentStatusLabel(document.status)}
                   </p>
+                  {document.research_map ? (
+                    <div className="library-map-summary" aria-label={`Research Map status for ${document.title}`}>
+                      <span>{document.research_map.reviewed_core_nodes} / {document.research_map.reviewable_core_nodes} verified</span>
+                      <span>{document.research_map.issue_count} evidence gap{document.research_map.issue_count === 1 ? '' : 's'}</span>
+                      <span>{document.research_map.is_stale ? 'Stale' : 'Current'} · {document.research_map.status}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="row-actions">
@@ -317,7 +324,24 @@ export function App() {
           />
         )
       ) : null}
-      {reader && mapState.mode === 'reader' ? <Reader payload={reader} /> : null}
+      {reader && mapState.mode === 'reader' ? (
+        <Reader
+          payload={reader}
+          focusBlockId={mapState.readerFocusBlockId || null}
+          citingNodes={
+            mapState.readerFocusBlockId
+              ? (mapState.map?.nodes ?? [])
+                  .filter((node) =>
+                    node.evidence.some(
+                      (evidence) => evidence.block_id === mapState.readerFocusBlockId
+                    )
+                  )
+                  .map((node) => ({ id: node.id, title: node.title }))
+              : []
+          }
+          onReturnToMap={mapState.map ? () => dispatchMap({ type: 'returnToMap' }) : undefined}
+        />
+      ) : null}
     </main>
   )
 }

@@ -158,6 +158,7 @@ export function ResearchMap({
                     <button
                       type="button"
                       className={node.id === selectedNode?.id ? 'outline-node selected' : 'outline-node'}
+                      aria-label={node.title}
                       aria-current={node.id === selectedNode?.id ? 'true' : undefined}
                       onClick={() => onSelectNode(node.id)}
                       key={node.id}

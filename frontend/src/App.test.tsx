@@ -54,7 +54,7 @@ const readerPayload: ReaderPayload = {
   ],
   blocks: [
     {
-      id: 'block-1',
+      id: 'block-0',
       order_index: 0,
       page_number: 1,
       block_type: 'heading',
@@ -124,6 +124,48 @@ describe('App', () => {
     )
     expect(conflict).toHaveAttribute('role', 'alert')
     expect(screen.getAllByText('AI draft claim 0').length).toBeGreaterThan(0)
+  })
+
+  it('deep-links exact evidence into Reader and restores Map context on return', async () => {
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'View evidence in Reader' }))
+
+    const focused = await screen.findByTestId('reader-row-block-0')
+    expect(focused).toHaveFocus()
+    expect(focused).toHaveTextContent('Cited by Research question')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
+    expect(await screen.findByLabelText('Evidence Inspector for Research question')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Research question' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
+  })
+
+  it('shows verification, evidence gaps, and freshness in Library rows', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        research_map: {
+          version_id: 'map-1',
+          status: 'partial',
+          is_current: true,
+          is_stale: false,
+          reviewed_core_nodes: 2,
+          reviewable_core_nodes: 6,
+          issue_count: 3
+        }
+      }
+    ])
+    render(<App />)
+
+    expect(await screen.findByText('2 / 6 verified')).toBeInTheDocument()
+    expect(screen.getByText('3 evidence gaps')).toBeInTheDocument()
+    expect(screen.getByText('Current · partial')).toBeInTheDocument()
   })
 
   it('shows discovered documents from the book folder', async () => {

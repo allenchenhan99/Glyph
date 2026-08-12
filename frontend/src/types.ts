@@ -12,6 +12,17 @@ export type DocumentRecord = {
   title: string
   file_type: string
   status: DocumentStatus
+  research_map?: ResearchMapSummary | null
+}
+
+export type ResearchMapSummary = {
+  version_id: string
+  status: ResearchMapStatus
+  is_current: boolean
+  is_stale: boolean
+  reviewed_core_nodes: number
+  reviewable_core_nodes: number
+  issue_count: number
 }
 
 export type ProcessingJob = {

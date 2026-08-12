@@ -217,6 +217,26 @@ h1 {
   font-size: 0.84rem;
 }
 
+.library-map-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 13px;
+  margin-top: 7px;
+  color: var(--evidence);
+  font-size: 0.72rem;
+}
+
+.library-map-summary span + span {
+  position: relative;
+}
+
+.library-map-summary span + span::before {
+  position: absolute;
+  left: -8px;
+  color: var(--rule-dark);
+  content: "·";
+}
+
 .reader-shell {
   min-height: 640px;
   display: grid;
@@ -315,6 +335,12 @@ h1 {
   font-size: 0.9rem;
 }
 
+.reader-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .block-table {
   height: min(74vh, 760px);
   min-height: 500px;
@@ -355,6 +381,16 @@ h1 {
 .reader-row[data-hovered='true'] {
   background: #fff7e6;
   box-shadow: inset 4px 0 0 #b86f46;
+}
+
+.reader-row[data-focused='true'] {
+  background: var(--evidence-soft);
+  box-shadow: inset 4px 0 0 var(--evidence);
+}
+
+.reader-row[data-focused='true']:focus-visible {
+  outline: 3px solid rgba(31, 94, 120, 0.4);
+  outline-offset: -3px;
 }
 
 .reader-row[data-block-type='formula'],
@@ -494,6 +530,23 @@ h1 {
   margin-bottom: 8px;
   color: #68746e;
   font-size: 0.74rem;
+}
+
+.citation-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+
+.citation-badges span {
+  padding: 3px 7px;
+  border: 1px solid var(--evidence);
+  border-radius: 999px;
+  color: var(--evidence);
+  background: var(--evidence-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
 }
 
 .reader-row[data-hovered='true'] .block-meta {
@@ -1144,7 +1197,8 @@ h1 {
   }
 
   .toolbar,
-  .row-actions {
+  .row-actions,
+  .reader-header-actions {
     flex-wrap: wrap;
   }
 

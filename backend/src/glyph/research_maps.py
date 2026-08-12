@@ -136,6 +136,17 @@ class ResearchMapVersionSummaryView:
 
 
 @dataclass(frozen=True)
+class ResearchMapLibrarySummaryView:
+    version_id: str
+    status: str
+    is_current: bool
+    is_stale: bool
+    reviewed_core_nodes: int
+    reviewable_core_nodes: int
+    issue_count: int
+
+
+@dataclass(frozen=True)
 class ReviewRecordView:
     id: str
     node_id: str
@@ -416,6 +427,92 @@ def load_active_research_map(session: Session, document_id: str) -> ResearchMapV
     if version_id is None:
         raise ResearchMapNotFoundError("Active Research Map not found")
     return load_research_map(session, version_id)
+
+
+def load_research_map_library_summaries(
+    session: Session,
+    documents: Sequence[Document],
+) -> dict[str, ResearchMapLibrarySummaryView]:
+    """Load compact active-map state in a bounded number of batched queries."""
+    if not documents:
+        return {}
+    documents_by_id = {document.id: document for document in documents}
+    versions = session.scalars(
+        select(ResearchMapVersion).where(
+            ResearchMapVersion.document_id.in_(documents_by_id),
+            ResearchMapVersion.is_active.is_(True),
+        )
+    ).all()
+    if not versions:
+        return {}
+
+    version_ids = [version.id for version in versions]
+    nodes = session.scalars(
+        select(ResearchNode).where(ResearchNode.map_version_id.in_(version_ids))
+    ).all()
+    issue_counts: dict[str, int] = {
+        version_id: count
+        for version_id, count in session.execute(
+            select(ResearchMapIssue.map_version_id, func.count(ResearchMapIssue.id))
+            .where(ResearchMapIssue.map_version_id.in_(version_ids))
+            .group_by(ResearchMapIssue.map_version_id)
+        ).all()
+    }
+
+    core_types = frozenset().union(*CORE_NODE_GROUPS.values())
+    nodes_by_version: defaultdict[str, list[ResearchNode]] = defaultdict(list)
+    all_signatures: set[str] = set()
+    for node in nodes:
+        nodes_by_version[node.map_version_id].append(node)
+        all_signatures.add(node.node_signature)
+
+    reviewed_signatures_by_document: defaultdict[str, set[str]] = defaultdict(set)
+    if all_signatures:
+        reviewed_rows = session.execute(
+            select(
+                ResearchMapVersion.document_id,
+                ResearchNodeReview.based_on_node_signature,
+            )
+            .join(ResearchNode, ResearchNodeReview.node_id == ResearchNode.id)
+            .join(
+                ResearchMapVersion,
+                ResearchNode.map_version_id == ResearchMapVersion.id,
+            )
+            .where(
+                ResearchMapVersion.document_id.in_(documents_by_id),
+                ResearchNodeReview.based_on_node_signature.in_(all_signatures),
+            )
+            .distinct()
+        ).all()
+        for document_id, signature in reviewed_rows:
+            reviewed_signatures_by_document[document_id].add(signature)
+
+    summaries: dict[str, ResearchMapLibrarySummaryView] = {}
+    for version in versions:
+        document = documents_by_id[version.document_id]
+        core_nodes = [
+            node
+            for node in nodes_by_version[version.id]
+            if node.node_type in core_types
+        ]
+        reviewed_signatures = reviewed_signatures_by_document[document.id]
+        is_current = (
+            document.status == "completed"
+            and document.processed_content_hash == document.content_hash
+            and version.source_content_hash == document.content_hash
+        )
+        summaries[document.id] = ResearchMapLibrarySummaryView(
+            version_id=version.id,
+            status=version.status,
+            is_current=is_current,
+            is_stale=not is_current,
+            reviewed_core_nodes=sum(
+                node.node_signature in reviewed_signatures for node in core_nodes
+            ),
+            reviewable_core_nodes=len(core_nodes),
+            issue_count=issue_counts.get(version.id, 0),
+        )
+    return summaries
 
 
 def require_current_reader(session: Session, document_id: str) -> Document:

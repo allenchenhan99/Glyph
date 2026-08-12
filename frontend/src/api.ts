@@ -194,7 +194,26 @@ function isDocument(value: unknown): value is DocumentRecord {
     isString(value.id) &&
     isString(value.title) &&
     isString(value.file_type) &&
-    isDocumentStatus(value.status)
+    isDocumentStatus(value.status) &&
+    (!('research_map' in value) ||
+      value.research_map === null ||
+      isResearchMapSummary(value.research_map))
+  )
+}
+
+function isResearchMapSummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isString(value.version_id) &&
+    isOneOf(value.status, mapStatuses) &&
+    isBoolean(value.is_current) &&
+    isBoolean(value.is_stale) &&
+    isInteger(value.reviewed_core_nodes) &&
+    value.reviewed_core_nodes >= 0 &&
+    isInteger(value.reviewable_core_nodes) &&
+    value.reviewable_core_nodes >= value.reviewed_core_nodes &&
+    isInteger(value.issue_count) &&
+    value.issue_count >= 0
   )
 }
 

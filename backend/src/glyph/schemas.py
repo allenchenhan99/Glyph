@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from glyph.research_schemas import ResearchMapLibrarySummaryOut
+
 
 class DocumentOut(BaseModel):
     id: str
     title: str
     file_type: str
     status: str
+    research_map: ResearchMapLibrarySummaryOut | None = None
 
 
 class JobOut(BaseModel):

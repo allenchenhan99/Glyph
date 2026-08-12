@@ -1,15 +1,31 @@
-import { FileImage, FileText, Gauge, ListTree, SquareFunction, Table2 } from 'lucide-react'
+import {
+  ArrowLeft,
+  FileImage,
+  FileText,
+  Gauge,
+  ListTree,
+  SquareFunction,
+  Table2
+} from 'lucide-react'
 import katex from 'katex'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import 'katex/dist/katex.min.css'
 
 import type { ReaderBlock, ReaderPayload } from './types'
 
 type ReaderProps = {
   payload: ReaderPayload
+  focusBlockId?: string | null
+  citingNodes?: Array<{ id: string; title: string }>
+  onReturnToMap?: () => void
 }
 
-export function Reader({ payload }: ReaderProps) {
+export function Reader({
+  payload,
+  focusBlockId = null,
+  citingNodes = [],
+  onReturnToMap
+}: ReaderProps) {
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null)
 
   const firstBlockBySectionPath = useMemo(() => {
@@ -21,6 +37,11 @@ export function Reader({ payload }: ReaderProps) {
     }
     return targets
   }, [payload.blocks])
+
+  useEffect(() => {
+    if (!focusBlockId) return
+    document.getElementById(`block-${focusBlockId}`)?.focus({ preventScroll: true })
+  }, [focusBlockId, payload.document.id])
 
   return (
     <section className="reader-shell" aria-label={`Reader for ${payload.document.title}`}>
@@ -50,9 +71,16 @@ export function Reader({ payload }: ReaderProps) {
             <p className="kicker">Aligned reading</p>
             <h2>{payload.document.title}</h2>
           </div>
-          <div className="reader-stat">
-            <Gauge aria-hidden="true" size={18} />
-            <span>{payload.blocks.length} blocks</span>
+          <div className="reader-header-actions">
+            {onReturnToMap ? (
+              <button type="button" className="text-button" onClick={onReturnToMap}>
+                <ArrowLeft aria-hidden="true" size={16} /> Return to Research Map
+              </button>
+            ) : null}
+            <div className="reader-stat">
+              <Gauge aria-hidden="true" size={18} />
+              <span>{payload.blocks.length} blocks</span>
+            </div>
           </div>
         </header>
 
@@ -72,6 +100,8 @@ export function Reader({ payload }: ReaderProps) {
             <ReaderRow
               block={block}
               hovered={hoveredBlockId === block.id}
+              focused={focusBlockId === block.id}
+              citingNodes={focusBlockId === block.id ? citingNodes : []}
               key={block.id}
               onHover={setHoveredBlockId}
             />
@@ -85,21 +115,27 @@ export function Reader({ payload }: ReaderProps) {
 type ReaderRowProps = {
   block: ReaderBlock
   hovered: boolean
+  focused: boolean
+  citingNodes: Array<{ id: string; title: string }>
   onHover: (blockId: string | null) => void
 }
 
-function ReaderRow({ block, hovered, onHover }: ReaderRowProps) {
+function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowProps) {
   return (
     <article
       className="block-grid reader-row"
       data-block-type={block.block_type}
       data-hovered={hovered ? 'true' : 'false'}
+      data-focused={focused ? 'true' : 'false'}
       data-testid={`reader-row-${block.id}`}
       id={`block-${block.id}`}
+      tabIndex={-1}
+      aria-current={focused ? 'location' : undefined}
       onMouseEnter={() => onHover(block.id)}
       onMouseLeave={() => onHover(null)}
     >
       <div className="source-cell">
+        {citingNodes.length ? <CitationBadges nodes={citingNodes} /> : null}
         <BlockMeta block={block} />
         <BlockContent block={block} side="source" />
       </div>
@@ -108,6 +144,14 @@ function ReaderRow({ block, hovered, onHover }: ReaderRowProps) {
         <BlockContent block={block} side="translation" />
       </div>
     </article>
+  )
+}
+
+function CitationBadges({ nodes }: { nodes: Array<{ id: string; title: string }> }) {
+  return (
+    <div className="citation-badges" aria-label="Research Map citations">
+      {nodes.map((node) => <span key={node.id}>Cited by {node.title}</span>)}
+    </div>
   )
 }
 

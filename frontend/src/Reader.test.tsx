@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { Reader } from './Reader'
 import type { ReaderPayload } from './types'
@@ -148,5 +148,25 @@ describe('Reader', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'This reader was generated from an older source version. Reprocess the document to update it.'
     )
+  })
+
+  it('focuses exact map evidence, identifies citing nodes, and returns to the Map', () => {
+    const onReturnToMap = vi.fn()
+    render(
+      <Reader
+        payload={payload}
+        focusBlockId="block-2"
+        citingNodes={[{ id: 'node-1', title: 'Primary result' }]}
+        onReturnToMap={onReturnToMap}
+      />
+    )
+
+    const focused = screen.getByTestId('reader-row-block-2')
+    expect(focused).toHaveFocus()
+    expect(focused).toHaveAttribute('aria-current', 'location')
+    expect(within(focused).getByText('Cited by Primary result')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
+    expect(onReturnToMap).toHaveBeenCalledTimes(1)
   })
 })
