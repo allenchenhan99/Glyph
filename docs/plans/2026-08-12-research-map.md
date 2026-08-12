@@ -19,7 +19,7 @@
 
 **Step 1: Write failing migration tests**
 
-Add tests that upgrade both an empty database and a legacy database through revision `0003_research_maps`. Assert the seven new tables exist, the previous document and Reader data remain byte-for-byte intact, foreign keys target the correct tables, and no map rows are invented for existing documents.
+Add tests that upgrade both an empty database and a legacy database through revision `0003_research_maps`. Assert the six new tables exist, the previous document and Reader data remain byte-for-byte intact, foreign keys target the correct tables, and no map rows are invented for existing documents.
 
 ```python
 def test_research_map_migration_preserves_existing_reader(tmp_path):
@@ -44,7 +44,7 @@ Expected: FAIL because revision `0003_research_maps` and the new tables do not e
 
 **Step 3: Add SQLAlchemy models and relationships**
 
-Add typed models for `ResearchMapVersion`, `ResearchNode`, `ResearchEvidence`, `ResearchNodeReview`, `ResearchMapIssue`, and `ResearchMapJob`. Add unique constraints for `(map_version_id, node_key)`, `(node_id, block_id, quote_start, quote_end, relation)`, and at most one review row per node. Add indexes for document/version/job lookups. Keep status values as validated domain strings rather than database-specific enum types so SQLite migrations remain portable.
+Add typed models for `ResearchMapVersion`, `ResearchNode`, `ResearchEvidence`, `ResearchNodeReview`, `ResearchMapIssue`, and `ResearchMapJob`. Add unique constraints for `(map_version_id, node_key)`, `(node_id, block_id, quote_start, quote_end, relation)`, and `(node_id, revision_number)`. Reviews are append-only revisions linked with `supersedes_review_id`, so corrections retain full history. Add indexes for document/version/job lookups. Keep status values as validated domain strings rather than database-specific enum types so SQLite migrations remain portable.
 
 **Step 4: Add Alembic revision 0003**
 
@@ -680,4 +680,3 @@ Confirm Formula Workspace, cross-paper graph, cloud sync, accounts, collaboratio
 **Step 5: Use the finishing-a-development-branch skill**
 
 Present merge, PR, keep, and discard options only after every check passes.
-

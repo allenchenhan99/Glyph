@@ -145,13 +145,13 @@ Page and document identity are derived from the block. Provider-supplied page nu
 
 ### `research_node_reviews`
 
-- `id`, `node_id`
+- `id`, `node_id`, `revision_number`, optional `supersedes_review_id`
 - `status`: `confirmed`, `questioned`, or `corrected`
 - optional `corrected_claim_text`, `review_note`
 - `based_on_map_version_id`, `based_on_node_signature`
 - `reviewed_at`
 
-The AI draft is immutable. The effective UI value is the draft plus the latest review overlay. Corrected content is required only for `corrected`; it is forbidden for `confirmed`.
+The AI draft is immutable and reviews are append-only. The effective UI value is the draft plus the latest review revision. Corrected content is required only for `corrected`; it is forbidden for `confirmed`. Earlier confirmations, questions, and corrections remain available as review history.
 
 ### `research_map_issues`
 
@@ -256,4 +256,3 @@ The local product records no telemetry by default. The benchmark harness measure
 5. CLI evidence extraction and synthesis.
 6. Research Map workspace and guided review.
 7. Reader linking, accessibility, documentation, benchmark, and smoke validation.
-
