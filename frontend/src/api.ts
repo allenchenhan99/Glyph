@@ -1,9 +1,18 @@
 import type {
+  ContractExportFormat,
+  ContractExportLanguage,
+  ContractResolution,
+  ContractResolutionInput,
   DocumentRecord,
   DocumentStatus,
   EvidenceLocatorType,
   EvidenceQuality,
   EvidenceRelation,
+  ImplementationContract,
+  ImplementationContractDiff,
+  ImplementationContractExport,
+  ImplementationContractJob,
+  ImplementationContractVersion,
   ProcessingJob,
   ReaderPayload,
   ResearchMap,
@@ -19,6 +28,14 @@ import type {
   ReviewStatus,
   ResearchMapVersion
 } from './types'
+import {
+  isContractResolution,
+  isImplementationContract,
+  isImplementationContractDiff,
+  isImplementationContractJob,
+  isImplementationContractSummary,
+  isImplementationContractVersionArray
+} from './implementationContractGuards'
 
 const apiBase = ''
 
@@ -105,6 +122,122 @@ export async function getResearchMapDiff(
     `/api/research-maps/${versionId}/diff?against=${encodeURIComponent(againstVersionId)}`,
     isResearchMapDiff
   )
+}
+
+export async function enqueueImplementationContract(
+  documentId: string,
+  researchMapVersionId?: string
+): Promise<ImplementationContractJob> {
+  const body =
+    researchMapVersionId === undefined
+      ? {}
+      : { research_map_version_id: researchMapVersionId }
+  return fetchJson(
+    `/api/documents/${documentId}/implementation-contract`,
+    isImplementationContractJob,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body)
+    }
+  )
+}
+
+export async function getImplementationContractJob(
+  jobId: string
+): Promise<ImplementationContractJob> {
+  return fetchJson(
+    `/api/implementation-contract-jobs/${jobId}`,
+    isImplementationContractJob
+  )
+}
+
+export async function getActiveImplementationContract(
+  documentId: string
+): Promise<ImplementationContract> {
+  return fetchJson(
+    `/api/documents/${documentId}/implementation-contract`,
+    isImplementationContract
+  )
+}
+
+export async function getImplementationContractVersion(
+  versionId: string
+): Promise<ImplementationContract> {
+  return fetchJson(
+    `/api/implementation-contracts/${versionId}`,
+    isImplementationContract
+  )
+}
+
+export async function listImplementationContractVersions(
+  documentId: string
+): Promise<ImplementationContractVersion[]> {
+  return fetchJson(
+    `/api/documents/${documentId}/implementation-contract/versions`,
+    isImplementationContractVersionArray
+  )
+}
+
+export async function getImplementationContractDiff(
+  versionId: string,
+  againstVersionId: string
+): Promise<ImplementationContractDiff> {
+  return fetchJson(
+    `/api/implementation-contracts/${versionId}/diff?against=${encodeURIComponent(againstVersionId)}`,
+    isImplementationContractDiff
+  )
+}
+
+export async function resolveImplementationContractItem(
+  itemId: string,
+  input: ContractResolutionInput
+): Promise<ContractResolution> {
+  return fetchJson(
+    `/api/implementation-contract-items/${itemId}/resolution`,
+    isContractResolution,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input)
+    }
+  )
+}
+
+export async function activateImplementationContract(
+  versionId: string
+): Promise<ImplementationContract> {
+  return fetchJson(
+    `/api/implementation-contracts/${versionId}/activate`,
+    isImplementationContract,
+    { method: 'POST' }
+  )
+}
+
+export async function getImplementationContractExport(
+  versionId: string,
+  format: ContractExportFormat,
+  language: ContractExportLanguage
+): Promise<ImplementationContractExport> {
+  const path =
+    `/api/implementation-contracts/${versionId}/export` +
+    `?format=${encodeURIComponent(format)}&language=${encodeURIComponent(language)}`
+  const response = await fetch(`${apiBase}${path}`)
+  if (!response.ok) throw await responseError(response)
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0]
+  const disposition = response.headers.get('content-disposition')
+  const filename = disposition?.match(
+    /^attachment; filename="(implementation-contract-[A-Za-z0-9._-]+\.(?:json|md))"$/
+  )?.[1]
+  const expectedContentType = format === 'json' ? 'application/json' : 'text/markdown'
+  if (contentType !== expectedContentType || filename === undefined) {
+    throw new Error('Unexpected API response shape')
+  }
+  return {
+    blob: await response.blob(),
+    filename,
+    content_type: expectedContentType
+  }
 }
 
 async function fetchJson<T>(
@@ -197,7 +330,10 @@ function isDocument(value: unknown): value is DocumentRecord {
     isDocumentStatus(value.status) &&
     (!('research_map' in value) ||
       value.research_map === null ||
-      isResearchMapSummary(value.research_map))
+      isResearchMapSummary(value.research_map)) &&
+    (!('implementation_contract' in value) ||
+      value.implementation_contract === null ||
+      isImplementationContractSummary(value.implementation_contract))
   )
 }
 

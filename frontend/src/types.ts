@@ -13,6 +13,7 @@ export type DocumentRecord = {
   file_type: string
   status: DocumentStatus
   research_map?: ResearchMapSummary | null
+  implementation_contract?: ImplementationContractSummary | null
 }
 
 export type ResearchMapSummary = {
@@ -223,4 +224,259 @@ export type ResearchMapDiff = {
   version_id: string
   against_version_id: string
   nodes: ResearchNodeDiff[]
+}
+
+export type ContractSection =
+  | 'thesis'
+  | 'data_requirements'
+  | 'universe_and_sample'
+  | 'signal_and_timing'
+  | 'portfolio_construction'
+  | 'evaluation'
+  | 'frictions_and_risks'
+  | 'open_decisions'
+
+export type ContractItemType =
+  | 'required_dataset'
+  | 'required_field'
+  | 'data_frequency'
+  | 'availability_lag'
+  | 'sample_period'
+  | 'universe_filter'
+  | 'sample_filter'
+  | 'signal_formula'
+  | 'signal_direction'
+  | 'formation_date'
+  | 'lookback_window'
+  | 'weighting_rule'
+  | 'rebalance_frequency'
+  | 'holding_period'
+  | 'long_short_definition'
+  | 'benchmark_model'
+  | 'evaluation_metric'
+  | 'statistical_test'
+  | 'transaction_cost'
+  | 'turnover_assumption'
+  | 'survivorship_risk'
+  | 'lookahead_risk'
+  | 'implementation_constraint'
+
+export type ContractOrigin =
+  | 'author_explicit'
+  | 'derived'
+  | 'human_decision'
+  | 'missing'
+export type ContractGenerationStatus = 'building' | 'complete' | 'partial' | 'failed'
+export type ContractReadiness = 'blocked' | 'review_needed' | 'implementation_ready'
+export type ContractResolutionStatus =
+  | 'confirmed'
+  | 'corrected'
+  | 'decided'
+  | 'questioned'
+  | 'not_applicable'
+export type ContractIssueSeverity = 'info' | 'warning' | 'error'
+export type ContractDiffClassification =
+  | 'unchanged'
+  | 'value_changed'
+  | 'origin_changed'
+  | 'evidence_changed'
+  | 'added'
+  | 'removed'
+export type ContractRuleOperator = 'include' | 'exclude' | 'rank' | 'threshold'
+export type ContractPeriodUnit =
+  | 'business_day'
+  | 'day'
+  | 'week'
+  | 'month'
+  | 'quarter'
+  | 'year'
+export type ImplementationContractJobStatus =
+  | 'queued'
+  | 'running'
+  | 'completed'
+  | 'failed'
+export type ContractExportFormat = 'json' | 'markdown'
+export type ContractExportLanguage = 'en' | 'zh-TW' | 'bilingual'
+
+export type ContractScalarValue = {
+  kind: 'scalar'
+  value: string | number | boolean
+  unit?: string | null
+}
+
+export type ContractFormulaValue = {
+  kind: 'formula'
+  expression: string
+  variables: string[]
+}
+
+export type ContractRuleValue = {
+  kind: 'rule'
+  operator: ContractRuleOperator
+  field: string
+  value: ContractScalarValue
+}
+
+export type ContractListValue = {
+  kind: 'list'
+  values: ContractScalarValue[]
+}
+
+export type ContractRangeValue = {
+  kind: 'range'
+  minimum: ContractScalarValue
+  maximum: ContractScalarValue
+  include_minimum: boolean
+  include_maximum: boolean
+}
+
+export type ContractPeriodValue = {
+  kind: 'period'
+  amount: number
+  unit: ContractPeriodUnit
+  anchor?: string | null
+}
+
+export type ContractValue =
+  | ContractScalarValue
+  | ContractFormulaValue
+  | ContractRuleValue
+  | ContractListValue
+  | ContractRangeValue
+  | ContractPeriodValue
+
+export type ContractEvidence = {
+  id: string
+  block_id: string
+  research_node_id: string | null
+  locator_type: EvidenceLocatorType
+  quote_text: string
+  quote_start: number
+  quote_end: number
+  source_quote_hash: string
+  relation: EvidenceRelation
+  source_label: string | null
+  page_number: number
+  block_type: string
+  translated_text: string
+}
+
+export type ContractIssue = {
+  id: string
+  item_id: string | null
+  code: string
+  severity: ContractIssueSeverity
+  message: string
+}
+
+export type ContractResolution = {
+  id: string
+  item_id: string
+  revision_number: number
+  supersedes_resolution_id: string | null
+  status: ContractResolutionStatus
+  resolved_value: ContractValue | null
+  reason: string | null
+  based_on_contract_version_id: string
+  based_on_item_signature: string
+  request_id: string
+  resolved_at: string
+}
+
+export type ContractResolutionInput = {
+  request_id: string
+  status: ContractResolutionStatus
+  based_on_item_signature: string
+  resolved_value: ContractValue | null
+  reason: string | null
+}
+
+export type ImplementationContractItem = {
+  id: string
+  item_key: string
+  section: ContractSection
+  item_type: ContractItemType
+  draft_value: ContractValue | null
+  effective_value: ContractValue | null
+  origin: ContractOrigin
+  effective_origin: ContractOrigin
+  rationale: string | null
+  is_blocking: boolean
+  is_optional: boolean
+  display_order: number
+  item_signature: string
+  evidence: ContractEvidence[]
+  issues: ContractIssue[]
+  resolution: ContractResolution | null
+  resolution_history: ContractResolution[]
+}
+
+export type ImplementationContract = {
+  id: string
+  document_id: string
+  research_map_version_id: string
+  previous_version_id: string | null
+  source_content_hash: string
+  research_map_signature: string
+  schema_version: string
+  provider: string
+  model_name: string | null
+  status: ContractGenerationStatus
+  readiness: ContractReadiness
+  is_active: boolean
+  is_current: boolean
+  is_stale: boolean
+  created_at: string
+  completed_at: string | null
+  items: ImplementationContractItem[]
+  issues: ContractIssue[]
+}
+
+export type ImplementationContractVersion = Omit<
+  ImplementationContract,
+  'items' | 'issues'
+>
+
+export type ImplementationContractJob = {
+  id: string
+  document_id: string
+  requested_research_map_version_id: string | null
+  contract_version_id: string | null
+  status: ImplementationContractJobStatus
+  stage: string
+  progress: number
+  error_message: string | null
+  attempt_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type ImplementationContractSummary = {
+  version_id: string
+  generation_status: ContractGenerationStatus
+  readiness: ContractReadiness
+  is_current: boolean
+  is_stale: boolean
+  blocker_count: number
+  reviewed_count: number
+  total_reviewable_count: number
+}
+
+export type ImplementationContractItemDiff = {
+  item_key: string
+  classification: ContractDiffClassification
+  version_item_id: string | null
+  against_item_id: string | null
+}
+
+export type ImplementationContractDiff = {
+  version_id: string
+  against_version_id: string
+  items: ImplementationContractItemDiff[]
+}
+
+export type ImplementationContractExport = {
+  blob: Blob
+  filename: string
+  content_type: 'application/json' | 'text/markdown'
 }

@@ -2,17 +2,34 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  activateImplementationContract,
   activateResearchMap,
+  enqueueImplementationContract,
   enqueueResearchMap,
   getActiveResearchMap,
+  getActiveImplementationContract,
+  getImplementationContractDiff,
+  getImplementationContractExport,
+  getImplementationContractJob,
+  getImplementationContractVersion,
   getResearchMapDiff,
   getResearchMapJob,
   getResearchMapVersion,
   listDocuments,
+  listImplementationContractVersions,
   listResearchMapVersions,
   processDocument,
+  resolveImplementationContractItem,
   reviewResearchNode
 } from './api'
+import {
+  contractResolution,
+  implementationContract,
+  implementationContractDiff,
+  implementationContractJob,
+  implementationContractSummary,
+  implementationContractVersion
+} from './implementationContractTestData'
 
 const evidence = {
   id: 'evidence-1',
@@ -360,5 +377,359 @@ describe('Research Map API contracts', () => {
     await expect(getResearchMapDiff('map-1', 'map-0')).rejects.toThrow(
       'Unexpected API response shape'
     )
+  })
+})
+
+describe('Implementation Contract API contracts', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('validates every typed response and sends generation and resolution preconditions', async () => {
+    const responses = [
+      implementationContractJob,
+      implementationContractJob,
+      implementationContract,
+      implementationContract,
+      [implementationContractVersion],
+      implementationContractDiff,
+      contractResolution,
+      implementationContract
+    ]
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(responses.shift()), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(enqueueImplementationContract('doc-1', 'map-1')).resolves.toEqual(
+      implementationContractJob
+    )
+    await expect(getImplementationContractJob('contract-job-1')).resolves.toEqual(
+      implementationContractJob
+    )
+    await expect(getActiveImplementationContract('doc-1')).resolves.toEqual(
+      implementationContract
+    )
+    await expect(getImplementationContractVersion('contract-1')).resolves.toEqual(
+      implementationContract
+    )
+    await expect(listImplementationContractVersions('doc-1')).resolves.toEqual([
+      implementationContractVersion
+    ])
+    await expect(
+      getImplementationContractDiff('contract-1', 'contract-0')
+    ).resolves.toEqual(implementationContractDiff)
+    await expect(
+      resolveImplementationContractItem('item-portfolio', {
+        request_id: 'decision-1',
+        status: 'decided',
+        based_on_item_signature: 'c'.repeat(64),
+        resolved_value: { kind: 'scalar', value: 'value_weight' },
+        reason: 'Use the paper’s reported value-weighted construction.'
+      })
+    ).resolves.toEqual(contractResolution)
+    await expect(activateImplementationContract('contract-1')).resolves.toEqual(
+      implementationContract
+    )
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/api/documents/doc-1/implementation-contract',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ research_map_version_id: 'map-1' })
+      }
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      6,
+      '/api/implementation-contracts/contract-1/diff?against=contract-0',
+      undefined
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      7,
+      '/api/implementation-contract-items/item-portfolio/resolution',
+      expect.objectContaining({ method: 'PATCH' })
+    )
+  })
+
+  it('validates optional contract summaries in document rows', async () => {
+    const document = {
+      id: 'doc-1',
+      title: 'sample.pdf',
+      file_type: 'pdf',
+      status: 'completed',
+      research_map: null,
+      implementation_contract: implementationContractSummary
+    }
+    const invalid = {
+      ...document,
+      implementation_contract: {
+        ...implementationContractSummary,
+        reviewed_count: 9
+      }
+    }
+    const responses = [[document], [invalid]]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(responses.shift()), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        )
+      )
+    )
+
+    await expect(listDocuments()).resolves.toEqual([document])
+    await expect(listDocuments()).rejects.toThrow('Unexpected API response shape')
+  })
+
+  it('accepts every versioned ContractValue discriminator', async () => {
+    const values = [
+      { kind: 'scalar', value: 5, unit: 'percent' },
+      {
+        kind: 'formula',
+        expression: 'book_equity / market_equity',
+        variables: ['book_equity', 'market_equity']
+      },
+      {
+        kind: 'rule',
+        operator: 'include',
+        field: 'exchange_code',
+        value: { kind: 'scalar', value: 'NYSE' }
+      },
+      {
+        kind: 'list',
+        values: [
+          { kind: 'scalar', value: 'NYSE' },
+          { kind: 'scalar', value: 'NASDAQ' }
+        ]
+      },
+      {
+        kind: 'range',
+        minimum: { kind: 'scalar', value: 0 },
+        maximum: { kind: 'scalar', value: 1 },
+        include_minimum: true,
+        include_maximum: false
+      },
+      { kind: 'period', amount: 6, unit: 'month', anchor: 'fiscal_period_end' }
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() => {
+        const value = values.shift()
+        const item = {
+          ...implementationContract.items[0],
+          draft_value: value,
+          effective_value: value
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ ...implementationContract, items: [item] }),
+            { status: 200, headers: { 'content-type': 'application/json' } }
+          )
+        )
+      })
+    )
+
+    for (let index = 0; index < 6; index += 1) {
+      await expect(getActiveImplementationContract('doc-1')).resolves.toBeDefined()
+    }
+  })
+
+  it.each([
+    ['unknown section', { ...implementationContract.items[0], section: 'alpha' }],
+    ['unknown type', { ...implementationContract.items[0], item_type: 'magic' }],
+    ['unknown origin', { ...implementationContract.items[0], origin: 'model_guess' }],
+    [
+      'unknown effective origin',
+      { ...implementationContract.items[0], effective_origin: 'model_guess' }
+    ],
+    [
+      'unknown typed-value key',
+      {
+        ...implementationContract.items[0],
+        draft_value: { kind: 'scalar', value: 1, default: 0 }
+      }
+    ],
+    [
+      'malformed typed value',
+      {
+        ...implementationContract.items[0],
+        draft_value: { kind: 'formula', expression: 'x' }
+      }
+    ],
+    [
+      'non-finite typed number',
+      {
+        ...implementationContract.items[0],
+        draft_value: { kind: 'scalar', value: Number.POSITIVE_INFINITY }
+      }
+    ],
+    [
+      'invalid evidence hash',
+      {
+        ...implementationContract.items[0],
+        evidence: [
+          { ...implementationContract.items[0].evidence[0], source_quote_hash: 'bad' }
+        ]
+      }
+    ],
+    [
+      'incomplete evidence',
+      {
+        ...implementationContract.items[0],
+        evidence: [{ id: 'evidence-only' }]
+      }
+    ],
+    [
+      'incomplete resolution',
+      {
+        ...implementationContract.items[4],
+        resolution: { id: 'resolution-only' }
+      }
+    ]
+  ])('rejects %s at the HTTP boundary', async (_label, invalidItem) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ ...implementationContract, items: [invalidItem] }),
+          { status: 200, headers: { 'content-type': 'application/json' } }
+        )
+      )
+    )
+
+    await expect(getActiveImplementationContract('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+  })
+
+  it('rejects invalid contract, job, resolution, version, and diff metadata', async () => {
+    const invalidPayloads = [
+      { ...implementationContract, readiness: 'probably_ready' },
+      { ...implementationContract, status: 'draft' },
+      { ...implementationContract, created_at: 'tomorrow' },
+      { ...implementationContract, internal_provider_trace: 'must not escape' },
+      { ...implementationContractJob, status: 'sleeping' },
+      { ...implementationContractJob, progress: Number.NaN },
+      { ...contractResolution, status: 'approved' },
+      [{ ...implementationContractVersion, research_map_signature: 'bad' }],
+      {
+        ...implementationContractDiff,
+        items: [
+          {
+            ...implementationContractDiff.items[0],
+            classification: 'semantically_similar'
+          }
+        ]
+      }
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(invalidPayloads.shift()), {
+            status: 200,
+            headers: { 'content-type': 'application/json' }
+          })
+        )
+      )
+    )
+
+    await expect(getActiveImplementationContract('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(getActiveImplementationContract('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(getActiveImplementationContract('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(getActiveImplementationContract('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(getImplementationContractJob('job-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(getImplementationContractJob('job-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(
+      resolveImplementationContractItem('item-1', {
+        request_id: 'decision-1',
+        status: 'confirmed',
+        based_on_item_signature: 'b'.repeat(64),
+        resolved_value: null,
+        reason: null
+      })
+    ).rejects.toThrow('Unexpected API response shape')
+    await expect(listImplementationContractVersions('doc-1')).rejects.toThrow(
+      'Unexpected API response shape'
+    )
+    await expect(
+      getImplementationContractDiff('contract-1', 'contract-0')
+    ).rejects.toThrow('Unexpected API response shape')
+  })
+
+  it('downloads only complete export metadata from strict response headers', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response('{"readiness":"blocked"}', {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-disposition':
+            'attachment; filename="implementation-contract-contract-1.json"'
+        }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const download = await getImplementationContractExport(
+      'contract-1',
+      'json',
+      'bilingual'
+    )
+
+    expect(download.filename).toBe('implementation-contract-contract-1.json')
+    expect(download.content_type).toBe('application/json')
+    expect(download.blob.size).toBe(new TextEncoder().encode('{"readiness":"blocked"}').length)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/implementation-contracts/contract-1/export?format=json&language=bilingual'
+    )
+  })
+
+  it.each([
+    [{ 'content-type': 'application/json' }, 'missing disposition'],
+    [
+      {
+        'content-type': 'application/json',
+        'content-disposition': 'inline; filename="contract.json"'
+      },
+      'wrong disposition'
+    ],
+    [
+      {
+        'content-type': 'text/plain',
+        'content-disposition': 'attachment; filename="contract.json"'
+      },
+      'wrong content type'
+    ]
+  ])('rejects structurally incomplete export metadata: %s', async (headers, _label) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('{}', { status: 200, headers }))
+    )
+
+    await expect(
+      getImplementationContractExport('contract-1', 'json', 'en')
+    ).rejects.toThrow('Unexpected API response shape')
   })
 })
