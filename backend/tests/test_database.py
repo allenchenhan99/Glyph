@@ -314,7 +314,7 @@ def test_contract_migration_preserves_reader_and_research_map(tmp_path):
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     assert counts == dict.fromkeys(CONTRACT_TABLES, 0)
-    assert revision == "0004_implementation_contracts"
+    assert revision == "0005_contract_job_map_selection"
 
 
 def test_contract_migration_declares_expected_foreign_keys(tmp_path):
@@ -344,6 +344,7 @@ def test_contract_migration_declares_expected_foreign_keys(tmp_path):
         "implementation_contract_jobs": {
             "documents",
             "implementation_contract_versions",
+            "research_map_versions",
         },
     }
 
@@ -387,6 +388,71 @@ def test_contract_migration_declares_identity_and_active_row_constraints(tmp_pat
     }
     assert version_indexes["uq_implementation_contract_active_document"]["unique"] == 1
     assert job_indexes["uq_implementation_contract_active_job"]["unique"] == 1
+    assert "requested_research_map_version_id" in {
+        column["name"]
+        for column in inspector.get_columns("implementation_contract_jobs")
+    }
+
+
+def test_contract_job_map_selection_migration_preserves_existing_jobs(tmp_path):
+    settings = make_settings(tmp_path)
+    create_unmigrated_engine(settings).dispose()
+    command.upgrade(
+        alembic_config(settings.database_url), "0004_implementation_contracts"
+    )
+    engine = create_engine(settings.database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, title, source_path, content_hash, processed_content_hash, "
+                "file_type, status, created_at, updated_at) VALUES "
+                "('document-job', 'Job paper', '/tmp/job.pdf', :hash, :hash, "
+                "'pdf', 'completed', '2026-01-01', '2026-01-01')"
+            ),
+            {"hash": "a" * 64},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO implementation_contract_jobs "
+                "(id, document_id, contract_version_id, status, stage, progress, "
+                "error_message, attempt_count, lease_token, created_at, updated_at) "
+                "VALUES ('job-existing', 'document-job', NULL, 'queued', 'queued', "
+                "0, NULL, 0, NULL, '2026-01-01', '2026-01-01')"
+            )
+        )
+    engine.dispose()
+
+    factory = create_session_factory(settings)
+
+    with factory() as session:
+        row = session.execute(
+            text(
+                "SELECT id, document_id, contract_version_id, "
+                "requested_research_map_version_id, status, stage, progress, "
+                "error_message, attempt_count, lease_token, created_at, updated_at "
+                "FROM implementation_contract_jobs WHERE id = 'job-existing'"
+            )
+        ).one()
+        revision = session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+
+    assert row == (
+        "job-existing",
+        "document-job",
+        None,
+        None,
+        "queued",
+        "queued",
+        0.0,
+        None,
+        0,
+        None,
+        "2026-01-01",
+        "2026-01-01",
+    )
+    assert revision == "0005_contract_job_map_selection"
 
 
 def test_contract_models_expose_domain_relationships():
@@ -413,7 +479,11 @@ def test_contract_models_expose_domain_relationships():
             "based_on_contract_version",
         },
         "ImplementationContractIssue": {"contract_version", "item"},
-        "ImplementationContractJob": {"document", "contract_version"},
+        "ImplementationContractJob": {
+            "document",
+            "contract_version",
+            "requested_research_map_version",
+        },
     }
     contract_models = {
         name: getattr(model_module, name, None) for name in expected_relationships
@@ -489,6 +559,7 @@ def test_research_map_models_expose_domain_relationships():
             "jobs",
             "reviews",
             "implementation_contract_versions",
+            "requested_implementation_contract_jobs",
         },
         ResearchNode: {
             "map_version",
@@ -586,7 +657,7 @@ def test_research_map_migration_preserves_reader_and_invents_no_map_rows(tmp_pat
     )
     assert map_row_counts == dict.fromkeys(RESEARCH_MAP_TABLES, 0)
     assert block_source_hash == "legacy-hash"
-    assert revision == "0004_implementation_contracts"
+    assert revision == "0005_contract_job_map_selection"
 
 
 def test_completed_legacy_document_backfills_processed_hash(tmp_path):

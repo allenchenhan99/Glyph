@@ -201,6 +201,9 @@ class ResearchMapVersion(Base):
     implementation_contract_versions: Mapped[list[ImplementationContractVersion]] = (
         relationship(back_populates="research_map_version")
     )
+    requested_implementation_contract_jobs: Mapped[list[ImplementationContractJob]] = (
+        relationship(back_populates="requested_research_map_version")
+    )
 
 
 class ResearchNode(Base):
@@ -576,6 +579,9 @@ class ImplementationContractJob(Base):
     contract_version_id: Mapped[str | None] = mapped_column(
         ForeignKey("implementation_contract_versions.id")
     )
+    requested_research_map_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_map_versions.id")
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
@@ -594,4 +600,7 @@ class ImplementationContractJob(Base):
     )
     contract_version: Mapped[ImplementationContractVersion | None] = relationship(
         back_populates="jobs"
+    )
+    requested_research_map_version: Mapped[ResearchMapVersion | None] = relationship(
+        back_populates="requested_implementation_contract_jobs"
     )

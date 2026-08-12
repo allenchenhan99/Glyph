@@ -7,10 +7,12 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from glyph.config import Settings
 from glyph.contract_ai import (
     ContractInputBlock,
     MockImplementationContractProvider,
     SynthesizedContractItem,
+    create_implementation_contract_provider,
     validate_extracted_requirements,
     validate_synthesized_contract,
 )
@@ -23,6 +25,45 @@ from glyph.contract_evidence import ContractEvidenceContext
 from glyph.models import Base, Block, Document, ResearchMapVersion
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures" / "contracts"
+
+
+@pytest.mark.parametrize(
+    ("ai_mode", "expected_name"),
+    [
+        ("mock", "mock"),
+        ("claude_cli", "claude_cli"),
+        ("codex_cli", "codex_cli"),
+    ],
+)
+def test_implementation_contract_provider_selection(ai_mode, expected_name, tmp_path):
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'glyph.sqlite3'}",
+        ocr_mode="mock",
+        ai_mode=ai_mode,
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command=None,
+    )
+
+    provider = create_implementation_contract_provider(settings)
+
+    assert provider.provider_name == expected_name
+
+
+def test_unknown_implementation_contract_provider_mode_fails_fast(tmp_path):
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'glyph.sqlite3'}",
+        ocr_mode="mock",
+        ai_mode="remote_magic",
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command=None,
+    )
+
+    with pytest.raises(RuntimeError, match="Unknown Implementation Contract AI mode"):
+        create_implementation_contract_provider(settings)
 
 
 @pytest.fixture

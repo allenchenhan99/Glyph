@@ -7,6 +7,7 @@ from typing import Protocol
 
 from sqlalchemy.orm import Session
 
+from glyph.config import Settings
 from glyph.contract_audit import EffectiveContractItem
 from glyph.contract_domain import (
     ContractItemDraft,
@@ -667,6 +668,25 @@ class MockImplementationContractProvider:
                 )
             )
         return tuple(synthesized)
+
+
+def create_implementation_contract_provider(
+    settings: Settings,
+) -> ImplementationContractProvider:
+    if settings.ai_mode == "mock":
+        return MockImplementationContractProvider()
+    if settings.ai_mode in {"claude_cli", "codex_cli"}:
+        from glyph.contract_cli_ai import CliImplementationContractProvider
+
+        return CliImplementationContractProvider(
+            provider=settings.ai_mode.removesuffix("_cli"),
+            model=settings.cli_model,
+            timeout_seconds=settings.cli_timeout_seconds,
+            block_batch_size=settings.contract_cli_block_batch_size,
+            concurrency=settings.cli_concurrency,
+            cache_dir=settings.data_dir / "implementation-contract-ai-cache",
+        )
+    raise RuntimeError(f"Unknown Implementation Contract AI mode: {settings.ai_mode}")
 
 
 def validate_extracted_requirements(
