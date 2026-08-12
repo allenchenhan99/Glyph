@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from glyph.contract_schemas import ImplementationContractLibrarySummaryOut
 from glyph.research_schemas import ResearchMapLibrarySummaryOut
 
 
@@ -11,6 +12,7 @@ class DocumentOut(BaseModel):
     file_type: str
     status: str
     research_map: ResearchMapLibrarySummaryOut | None = None
+    implementation_contract: ImplementationContractLibrarySummaryOut | None = None
 
 
 class JobOut(BaseModel):

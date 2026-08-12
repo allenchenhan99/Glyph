@@ -11,6 +11,7 @@ from glyph.contract_jobs import (
     list_queued_contract_job_ids,
     recover_interrupted_contract_jobs,
 )
+from glyph.contract_routes import router as contract_router
 from glyph.database import create_session_factory
 from glyph.documents import router as documents_router
 from glyph.research_ai import create_research_map_provider
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.state.session_factory = session_factory
     app.include_router(documents_router)
     app.include_router(research_router)
+    app.include_router(contract_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:

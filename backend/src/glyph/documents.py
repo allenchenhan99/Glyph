@@ -15,6 +15,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from glyph.config import Settings
+from glyph.contract_schemas import ImplementationContractLibrarySummaryOut
+from glyph.implementation_contracts import (
+    ImplementationContractLibrarySummaryView,
+    load_implementation_contract_library_summaries,
+)
 from glyph.models import Block, Document, Section, Summary
 from glyph.pipeline import (
     ProcessingConflictError,
@@ -187,6 +192,7 @@ def discover_book_documents(settings: Settings, session: Session) -> list[Docume
 def document_to_out(
     document: Document,
     research_map: ResearchMapLibrarySummaryView | None = None,
+    implementation_contract: ImplementationContractLibrarySummaryView | None = None,
 ) -> DocumentOut:
     return DocumentOut(
         id=document.id,
@@ -196,6 +202,13 @@ def document_to_out(
         research_map=(
             ResearchMapLibrarySummaryOut.model_validate(research_map)
             if research_map is not None
+            else None
+        ),
+        implementation_contract=(
+            ImplementationContractLibrarySummaryOut.model_validate(
+                implementation_contract
+            )
+            if implementation_contract is not None
             else None
         ),
     )
@@ -272,8 +285,16 @@ def list_documents(
         )
     session.flush()
     summaries = load_research_map_library_summaries(session, documents)
+    contract_summaries = load_implementation_contract_library_summaries(
+        session, documents
+    )
     return [
-        document_to_out(document, summaries.get(document.id)) for document in documents
+        document_to_out(
+            document,
+            summaries.get(document.id),
+            contract_summaries.get(document.id),
+        )
+        for document in documents
     ]
 
 

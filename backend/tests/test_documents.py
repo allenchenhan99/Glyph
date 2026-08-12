@@ -23,6 +23,7 @@ def test_documents_endpoint_discovers_supported_book_files(tmp_path, monkeypatch
     names = [item["title"] for item in response.json()]
     assert names == ["page.png", "sample.pdf"]
     assert all(item["status"] == "discovered" for item in response.json())
+    assert all(item["implementation_contract"] is None for item in response.json())
 
 
 def test_documents_endpoint_does_not_downgrade_processed_status(tmp_path, monkeypatch):

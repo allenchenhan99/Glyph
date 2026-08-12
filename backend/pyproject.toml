@@ -42,6 +42,7 @@ select = ["B", "BLE", "E4", "E7", "E9", "F", "FURB", "I", "SIM", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/glyph/documents.py" = ["B008"]
+"src/glyph/contract_routes.py" = ["B008"]
 "src/glyph/research_routes.py" = ["B008"]
 
 [tool.mypy]

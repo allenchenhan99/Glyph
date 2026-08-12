@@ -170,6 +170,18 @@ class ImplementationContractVersionSummaryView:
 
 
 @dataclass(frozen=True)
+class ImplementationContractLibrarySummaryView:
+    version_id: str
+    generation_status: str
+    readiness: str
+    is_current: bool
+    is_stale: bool
+    blocker_count: int
+    reviewed_count: int
+    total_reviewable_count: int
+
+
+@dataclass(frozen=True)
 class ContractItemDiffView:
     item_key: str
     classification: str
@@ -897,6 +909,161 @@ def list_implementation_contract_versions(
             )
         )
     return tuple(summaries)
+
+
+def load_implementation_contract_library_summaries(
+    session: Session,
+    documents: Sequence[Document],
+) -> dict[str, ImplementationContractLibrarySummaryView]:
+    """Load compact active-contract state with a fixed number of queries."""
+    if not documents:
+        return {}
+    documents_by_id = {document.id: document for document in documents}
+    version_rows = session.execute(
+        select(ImplementationContractVersion, ResearchMapVersion)
+        .join(
+            ResearchMapVersion,
+            ImplementationContractVersion.research_map_version_id
+            == ResearchMapVersion.id,
+        )
+        .where(
+            ImplementationContractVersion.document_id.in_(documents_by_id),
+            ImplementationContractVersion.is_active.is_(True),
+        )
+    ).all()
+    if not version_rows:
+        return {}
+
+    versions = [version for version, _map_version in version_rows]
+    maps_by_id = {map_version.id: map_version for _version, map_version in version_rows}
+    version_ids = [version.id for version in versions]
+    map_ids = list(maps_by_id)
+    items = session.scalars(
+        select(ImplementationContractItem).where(
+            ImplementationContractItem.contract_version_id.in_(version_ids)
+        )
+    ).all()
+    items_by_version: defaultdict[str, list[ImplementationContractItem]] = defaultdict(
+        list
+    )
+    signatures: set[str] = set()
+    for item in items:
+        items_by_version[item.contract_version_id].append(item)
+        signatures.add(item.item_signature)
+
+    blocker_counts = {
+        version_id: count
+        for version_id, count in session.execute(
+            select(
+                ImplementationContractIssue.contract_version_id,
+                func.count(ImplementationContractIssue.id),
+            )
+            .where(
+                ImplementationContractIssue.contract_version_id.in_(version_ids),
+                ImplementationContractIssue.severity == "error",
+            )
+            .group_by(ImplementationContractIssue.contract_version_id)
+        ).all()
+    }
+    reviewed_signatures_by_document: defaultdict[str, set[str]] = defaultdict(set)
+    if signatures:
+        resolution_rows = session.execute(
+            select(
+                ImplementationContractVersion.document_id,
+                ImplementationContractResolution.based_on_item_signature,
+            )
+            .join(
+                ImplementationContractVersion,
+                ImplementationContractResolution.based_on_contract_version_id
+                == ImplementationContractVersion.id,
+            )
+            .where(
+                ImplementationContractVersion.document_id.in_(documents_by_id),
+                ImplementationContractResolution.based_on_item_signature.in_(
+                    signatures
+                ),
+            )
+            .distinct()
+        ).all()
+        for document_id, signature in resolution_rows:
+            reviewed_signatures_by_document[document_id].add(signature)
+
+    map_signatures = _research_map_signatures(session, map_ids, maps_by_id)
+    summaries: dict[str, ImplementationContractLibrarySummaryView] = {}
+    for version in versions:
+        document = documents_by_id[version.document_id]
+        map_version = maps_by_id[version.research_map_version_id]
+        version_items = items_by_version[version.id]
+        reviewed_signatures = reviewed_signatures_by_document[document.id]
+        is_current = (
+            document.status == "completed"
+            and document.processed_content_hash == document.content_hash
+            and version.source_content_hash == document.content_hash
+            and map_version.document_id == document.id
+            and map_version.source_content_hash == document.content_hash
+            and version.research_map_signature == map_signatures[map_version.id]
+        )
+        summaries[document.id] = ImplementationContractLibrarySummaryView(
+            version_id=version.id,
+            generation_status=version.status,
+            readiness=version.readiness,
+            is_current=is_current,
+            is_stale=not is_current,
+            blocker_count=blocker_counts.get(version.id, 0),
+            reviewed_count=sum(
+                item.item_signature in reviewed_signatures for item in version_items
+            ),
+            total_reviewable_count=len(version_items),
+        )
+    return summaries
+
+
+def _research_map_signatures(
+    session: Session,
+    map_ids: Sequence[str],
+    maps_by_id: dict[str, ResearchMapVersion],
+) -> dict[str, str]:
+    nodes = session.scalars(
+        select(ResearchNode)
+        .where(ResearchNode.map_version_id.in_(map_ids))
+        .order_by(ResearchNode.node_key, ResearchNode.id)
+    ).all()
+    nodes_by_map: defaultdict[str, list[ResearchNode]] = defaultdict(list)
+    for node in nodes:
+        nodes_by_map[node.map_version_id].append(node)
+    evidence_by_map: defaultdict[str, list[str]] = defaultdict(list)
+    for map_id, source_quote_hash in session.execute(
+        select(ResearchNode.map_version_id, ResearchEvidence.source_quote_hash)
+        .join(ResearchEvidence, ResearchEvidence.node_id == ResearchNode.id)
+        .where(ResearchNode.map_version_id.in_(map_ids))
+        .order_by(
+            ResearchNode.map_version_id,
+            ResearchEvidence.source_quote_hash,
+            ResearchEvidence.id,
+        )
+    ).all():
+        evidence_by_map[map_id].append(source_quote_hash)
+    signatures: dict[str, str] = {}
+    for map_id in map_ids:
+        map_version = maps_by_id[map_id]
+        payload = {
+            "map_version_id": map_version.id,
+            "schema_version": map_version.schema_version,
+            "source_content_hash": map_version.source_content_hash,
+            "nodes": [
+                [node.id, node.node_key, node.node_signature]
+                for node in nodes_by_map[map_id]
+            ],
+            "evidence_hashes": evidence_by_map[map_id],
+        }
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        signatures[map_id] = hashlib.sha256(encoded.encode()).hexdigest()
+    return signatures
 
 
 def activate_implementation_contract(
