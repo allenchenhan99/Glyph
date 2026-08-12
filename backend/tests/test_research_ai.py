@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from glyph.config import Settings
 from glyph.models import Base, Block, Document
 from glyph.research_ai import (
     CORE_NODE_GROUPS,
@@ -11,6 +12,7 @@ from glyph.research_ai import (
     MockResearchMapProvider,
     NodeDraft,
     ResearchBlock,
+    create_research_map_provider,
     validate_extracted_candidates,
 )
 from glyph.research_domain import InvalidDomainValueError
@@ -177,3 +179,42 @@ def test_node_drafts_reject_unknown_provenance_and_evidence_references_are_tuple
             evidence_ids=("evidence-1",),
             display_order=0,
         )
+
+
+@pytest.mark.parametrize(
+    ("ai_mode", "expected_name"),
+    [
+        ("mock", "mock"),
+        ("claude_cli", "claude_cli"),
+        ("codex_cli", "codex_cli"),
+    ],
+)
+def test_research_map_provider_selection(ai_mode, expected_name, tmp_path):
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'glyph.sqlite3'}",
+        ocr_mode="mock",
+        ai_mode=ai_mode,
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command=None,
+    )
+
+    provider = create_research_map_provider(settings)
+
+    assert provider.name == expected_name
+
+
+def test_unknown_research_map_provider_mode_fails_fast(tmp_path):
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'glyph.sqlite3'}",
+        ocr_mode="mock",
+        ai_mode="remote_magic",
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command=None,
+    )
+
+    with pytest.raises(RuntimeError, match="Unknown Research Map AI mode"):
+        create_research_map_provider(settings)

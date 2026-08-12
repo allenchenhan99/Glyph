@@ -51,6 +51,7 @@ class ResearchBlock:
     id: str
     block_type: str
     source_text: str
+    source_content_hash: str | None = None
 
     @classmethod
     def from_model(cls, block: Block) -> ResearchBlock:
@@ -58,6 +59,7 @@ class ResearchBlock:
             id=block.id,
             block_type=block.block_type,
             source_text=block.source_text,
+            source_content_hash=block.source_content_hash,
         )
 
 
@@ -232,9 +234,18 @@ class MockResearchMapProvider:
 def create_research_map_provider(settings: Settings) -> ResearchMapProvider:
     if settings.ai_mode == "mock":
         return MockResearchMapProvider()
-    raise RuntimeError(
-        f"Research Map provider is not available for AI mode: {settings.ai_mode}"
-    )
+    if settings.ai_mode in {"claude_cli", "codex_cli"}:
+        from glyph.research_cli_ai import CliResearchMapProvider
+
+        return CliResearchMapProvider(
+            provider=settings.ai_mode.removesuffix("_cli"),
+            model=settings.cli_model,
+            timeout_seconds=settings.cli_timeout_seconds,
+            block_batch_size=settings.research_cli_block_batch_size,
+            concurrency=settings.cli_concurrency,
+            cache_dir=settings.data_dir / "research-map-ai-cache",
+        )
+    raise RuntimeError(f"Unknown Research Map AI mode: {settings.ai_mode}")
 
 
 def validate_extracted_candidates(
