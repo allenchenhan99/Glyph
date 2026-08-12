@@ -21,6 +21,7 @@ from glyph.contract_evidence import AcceptedContractEvidence
 _PARTIAL_ISSUE_CODES = {
     "derived_evidence_shortfall",
     "derived_without_rationale",
+    "empty_contract",
     "explicit_without_evidence",
 }
 _DATA_FREQUENCY_DAYS = {
@@ -62,6 +63,14 @@ def audit_contract(items: Iterable[EffectiveContractItem]) -> ContractAuditResul
     audited_items = tuple(_effective_item(item) for item in ordered)
     issues: list[ContractIssueDraft] = []
 
+    if not audited_items:
+        issues.append(
+            ContractIssueDraft(
+                code="empty_contract",
+                severity="error",
+                message="The Implementation Contract contains no typed items.",
+            )
+        )
     for item in audited_items:
         _audit_evidence(item, issues)
         _audit_resolution(item, issues)

@@ -167,6 +167,18 @@ def test_readiness_matrix(
     assert issue_code is None or issue_code in codes
 
 
+def test_empty_contract_is_partial_and_blocked_instead_of_false_ready():
+    module = audit_module()
+
+    audit = module.audit_contract(())
+
+    assert audit.generation_status == "partial"
+    assert audit.readiness == "blocked"
+    assert [(issue.code, issue.severity, issue.item_key) for issue in audit.issues] == [
+        ("empty_contract", "error", None)
+    ]
+
+
 def test_derived_item_requires_two_supporting_anchors_and_rationale():
     module = audit_module()
     derived = item(
