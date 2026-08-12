@@ -179,6 +179,24 @@ describe('Research Map API contracts', () => {
     vi.unstubAllGlobals()
   })
 
+  it('accepts the schema-v1 research_question ontology value', async () => {
+    const questionMap = {
+      ...researchMap,
+      nodes: [{ ...node, node_key: 'research_question.1', node_type: 'research_question' }]
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(questionMap), {
+          status: 200,
+          headers: { 'content-type': 'application/json' }
+        })
+      )
+    )
+
+    await expect(getActiveResearchMap('doc-1')).resolves.toEqual(questionMap)
+  })
+
   it('validates every typed response and sends review preconditions', async () => {
     const responses = [job, job, researchMap, researchMap, [version], review, researchMap, diff]
     const fetchMock = vi.fn().mockImplementation(() =>

@@ -9,6 +9,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from glyph.models import (
@@ -648,8 +649,14 @@ def append_node_review(
         based_on_map_version_id=node.map_version_id,
         based_on_node_signature=node.node_signature,
     )
-    session.add(review)
-    session.flush()
+    try:
+        with session.begin_nested():
+            session.add(review)
+            session.flush()
+    except IntegrityError as exc:
+        raise ResearchMapConflictError(
+            "Review changed concurrently; reload the Research Map and review it again"
+        ) from exc
     return _review_record_view(review)
 
 

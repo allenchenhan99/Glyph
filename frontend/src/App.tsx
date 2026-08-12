@@ -37,6 +37,7 @@ export function App() {
   const [activeDocument, setActiveDocument] = useState<DocumentRecord | null>(null)
   const [mapState, dispatchMap] = useReducer(researchMapReducer, initialResearchMapState)
   const pollController = useRef<AbortController | null>(null)
+  const reviewRequestSequence = useRef(0)
 
   useEffect(() => () => pollController.current?.abort(), [])
 
@@ -94,8 +95,11 @@ export function App() {
   async function handleOpenReader(document: DocumentRecord) {
     setNotice({ kind: 'status', message: `Opening ${document.title}` })
     try {
+      pollController.current?.abort()
+      const nextReader = await getReader(document.id)
       setActiveDocument(document)
-      setReader(await getReader(document.id))
+      setReader(nextReader)
+      dispatchMap({ type: 'resetWorkspace' })
       dispatchMap({ type: 'openReader', blockId: '' })
       setNotice(null)
     } catch (error) {
@@ -175,7 +179,8 @@ export function App() {
     reviewNote: string | null
   ) {
     const node = mapState.map?.nodes.find((item) => item.id === mapState.selectedNodeId)
-    if (!node) return
+    if (!node || mapState.pendingReview) return
+    const requestId = `review-${++reviewRequestSequence.current}`
     const optimisticReview: ResearchNodeReview = {
       id: `optimistic-${node.id}`,
       status,
@@ -185,7 +190,7 @@ export function App() {
       supersedes_review_id: node.review?.id ?? null,
       reviewed_at: new Date().toISOString()
     }
-    dispatchMap({ type: 'reviewOptimistic', nodeId: node.id, review: optimisticReview })
+    dispatchMap({ type: 'reviewOptimistic', requestId, nodeId: node.id, review: optimisticReview })
     try {
       const saved = await reviewResearchNode(node.id, {
         status,
@@ -193,7 +198,7 @@ export function App() {
         corrected_claim_text: correctedClaimText,
         review_note: reviewNote
       })
-      dispatchMap({ type: 'reviewSaved', nodeId: node.id, review: saved })
+      dispatchMap({ type: 'reviewSaved', requestId, nodeId: node.id, review: saved })
       await refreshDocuments()
     } catch (error) {
       console.error(error)
@@ -201,7 +206,7 @@ export function App() {
         error instanceof ApiError && error.status === 409
           ? `${error.message} Reload the Research Map and review it again.`
           : errorMessage(error, 'The review was not saved. Try again.')
-      dispatchMap({ type: 'reviewConflict', message })
+      dispatchMap({ type: 'reviewConflict', requestId, message })
     }
   }
 
@@ -314,6 +319,7 @@ export function App() {
             inspectorOpen={mapState.inspectorOpen}
             notice={mapState.notice}
             job={mapState.job}
+            reviewPending={mapState.pendingReview !== null}
             onSelectNode={(nodeId) => dispatchMap({ type: 'selectNode', nodeId })}
             onOpenInspector={() => dispatchMap({ type: 'openInspector' })}
             onCloseInspector={() => dispatchMap({ type: 'closeInspector' })}

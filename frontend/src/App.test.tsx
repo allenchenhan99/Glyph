@@ -147,6 +147,40 @@ describe('App', () => {
     await waitFor(() => expect(mockedListDocuments).toHaveBeenCalledTimes(2))
   })
 
+  it('allows only one review request while a review is pending', async () => {
+    let resolveReview!: (review: Awaited<ReturnType<typeof reviewResearchNode>>) => void
+    mockedReviewResearchNode.mockReturnValue(
+      new Promise((resolve) => {
+        resolveReview = resolve
+      })
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+    const confirm = await screen.findByRole('button', { name: 'Confirm claim' })
+
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    expect(mockedReviewResearchNode).toHaveBeenCalledTimes(1)
+    expect(confirm).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Question claim' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Save correction' })).toBeDisabled()
+
+    resolveReview({
+      id: 'review-1',
+      node_id: 'node-0',
+      status: 'confirmed',
+      corrected_claim_text: null,
+      review_note: null,
+      based_on_map_version_id: 'map-1',
+      based_on_node_signature: '1'.repeat(64),
+      revision_number: 1,
+      supersedes_review_id: null,
+      reviewed_at: '2026-08-12T12:01:00Z'
+    })
+    expect(await screen.findByText('Review saved.')).toBeInTheDocument()
+  })
+
   it('deep-links exact evidence into Reader and restores Map context on return', async () => {
     render(<App />)
     fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
@@ -162,6 +196,44 @@ describe('App', () => {
       'aria-current',
       'true'
     )
+  })
+
+  it('detaches a previous document map when opening another document reader', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed'
+      },
+      {
+        id: 'doc-2',
+        title: 'second.pdf',
+        file_type: 'pdf',
+        status: 'completed'
+      }
+    ])
+    mockedGetReader.mockImplementation(async (documentId) => ({
+      ...readerPayload,
+      document: {
+        ...readerPayload.document,
+        id: documentId,
+        title: documentId === 'doc-2' ? 'second.pdf' : 'sample.pdf'
+      },
+      blocks: readerPayload.blocks.map((block) => ({
+        ...block,
+        id: documentId === 'doc-2' ? 'block-2' : block.id
+      }))
+    }))
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+    expect(await screen.findByLabelText('Research Map workspace')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Open Full Reader for second.pdf' }))
+
+    expect(await screen.findByLabelText('Reader for second.pdf')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Return to Research Map' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Cited by Research question')).not.toBeInTheDocument()
   })
 
   it('shows verification, evidence gaps, and freshness in Library rows', async () => {

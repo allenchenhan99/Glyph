@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from glyph.models import (
@@ -21,6 +22,7 @@ from glyph.research_maps import (
     ResearchMapConflictError,
     ResearchMapService,
     activate_research_map,
+    append_node_review,
     load_research_map,
 )
 
@@ -199,6 +201,34 @@ def test_persistence_failure_preserves_active_map_and_reviews(
     assert counts(session) == before
     assert session.get(ResearchMapVersion, active.id).is_active is True
     assert session.get(ResearchNodeReview, review.id).status == "confirmed"
+
+
+def test_review_revision_race_returns_a_reload_conflict(map_database, monkeypatch):
+    session, document = map_database
+    version = ResearchMapService(session, MockResearchMapProvider()).generate(
+        document.id
+    )
+    session.commit()
+    node = version.nodes[0]
+
+    original_flush = session.flush
+
+    def fail_with_revision_race(*args, **kwargs):
+        if any(isinstance(value, ResearchNodeReview) for value in session.new):
+            raise IntegrityError("INSERT review", {}, Exception("duplicate revision"))
+        return original_flush(*args, **kwargs)
+
+    monkeypatch.setattr(session, "flush", fail_with_revision_race)
+
+    with pytest.raises(ResearchMapConflictError, match="Review changed concurrently"):
+        append_node_review(
+            session,
+            node.id,
+            status="confirmed",
+            based_on_node_signature=node.node_signature,
+            corrected_claim_text=None,
+            review_note=None,
+        )
 
 
 def test_loader_batches_exact_evidence_and_effective_review(map_database):

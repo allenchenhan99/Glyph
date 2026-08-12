@@ -9,6 +9,7 @@ export type WorkspaceMode = 'map' | 'reader'
 export type ResearchMapNotice = { kind: 'status' | 'error'; message: string } | null
 
 type PendingReview = {
+  requestId: string
   nodeId: string
   previousNode: ResearchNode
 }
@@ -57,9 +58,9 @@ export type ResearchMapAction =
   | { type: 'closeInspector' }
   | { type: 'guidedNext' }
   | { type: 'guidedPrevious' }
-  | { type: 'reviewOptimistic'; nodeId: string; review: ResearchNodeReview }
-  | { type: 'reviewSaved'; nodeId: string; review: ResearchNodeReview }
-  | { type: 'reviewConflict'; message: string }
+  | { type: 'reviewOptimistic'; requestId: string; nodeId: string; review: ResearchNodeReview }
+  | { type: 'reviewSaved'; requestId: string; nodeId: string; review: ResearchNodeReview }
+  | { type: 'reviewConflict'; requestId: string; message: string }
   | { type: 'openReader'; blockId: string }
   | { type: 'returnToMap' }
 
@@ -137,12 +138,12 @@ export function researchMapReducer(
       return {
         ...state,
         map: replaceNode(state.map, action.nodeId, action.review),
-        pendingReview: { nodeId: action.nodeId, previousNode },
+        pendingReview: { requestId: action.requestId, nodeId: action.nodeId, previousNode },
         notice: null
       }
     }
     case 'reviewSaved':
-      if (!state.map) return state
+      if (!state.map || state.pendingReview?.requestId !== action.requestId) return state
       {
         const isFirstCoreReview =
           state.pendingReview?.nodeId === action.nodeId &&
@@ -165,9 +166,7 @@ export function researchMapReducer(
         }
       }
     case 'reviewConflict': {
-      if (!state.map || !state.pendingReview) {
-        return { ...state, pendingReview: null, notice: { kind: 'error', message: action.message } }
-      }
+      if (!state.map || state.pendingReview?.requestId !== action.requestId) return state
       const restoredNodes = state.map.nodes.map((node) =>
         node.id === state.pendingReview?.nodeId ? state.pendingReview.previousNode : node
       )
@@ -186,6 +185,7 @@ export function researchMapReducer(
 }
 
 const coreReviewNodeTypes = new Set<ResearchNode['node_type']>([
+  'research_question',
   'author_claim',
   'hypothesis',
   'data_and_sample',

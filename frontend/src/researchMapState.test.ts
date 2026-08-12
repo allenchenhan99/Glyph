@@ -142,6 +142,7 @@ describe('researchMapReducer', () => {
     let state = researchMapReducer(initialResearchMapState, { type: 'mapLoaded', map })
     state = researchMapReducer(state, {
       type: 'reviewOptimistic',
+      requestId: 'request-1',
       nodeId: 'node-1',
       review
     })
@@ -150,6 +151,7 @@ describe('researchMapReducer', () => {
 
     state = researchMapReducer(state, {
       type: 'reviewConflict',
+      requestId: 'request-1',
       message: 'This claim changed. Reload the map and review it again.'
     })
 
@@ -162,16 +164,40 @@ describe('researchMapReducer', () => {
     })
   })
 
+  it('ignores a review response after its workspace request was replaced', () => {
+    let state = researchMapReducer(initialResearchMapState, { type: 'mapLoaded', map })
+    state = researchMapReducer(state, {
+      type: 'reviewOptimistic',
+      requestId: 'request-a',
+      nodeId: 'node-1',
+      review
+    })
+    state = researchMapReducer(state, { type: 'resetWorkspace' })
+    state = researchMapReducer(state, { type: 'mapLoaded', map })
+
+    state = researchMapReducer(state, {
+      type: 'reviewSaved',
+      requestId: 'request-a',
+      nodeId: 'node-1',
+      review: { ...review, id: 'late-server-review' }
+    })
+
+    expect(state.map?.nodes[0].review).toBeNull()
+    expect(state.notice).toBeNull()
+  })
+
   it('commits a server review and preserves map context through Reader mode', () => {
     let state = researchMapReducer(initialResearchMapState, { type: 'mapLoaded', map })
     state = researchMapReducer(state, { type: 'openInspector' })
     state = researchMapReducer(state, {
       type: 'reviewOptimistic',
+      requestId: 'request-1',
       nodeId: 'node-1',
       review
     })
     state = researchMapReducer(state, {
       type: 'reviewSaved',
+      requestId: 'request-1',
       nodeId: 'node-1',
       review: { ...review, id: 'server-review' }
     })

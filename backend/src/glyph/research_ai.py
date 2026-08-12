@@ -25,7 +25,7 @@ from glyph.research_evidence import (
 )
 
 CORE_NODE_GROUPS: dict[str, frozenset[NodeType]] = {
-    "question": frozenset({"author_claim", "hypothesis"}),
+    "question": frozenset({"research_question", "author_claim", "hypothesis"}),
     "data": frozenset({"data_and_sample", "data_source", "sample_filter"}),
     "signal": frozenset({"signal_definition", "variable_definition"}),
     "method": frozenset(

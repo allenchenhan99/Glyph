@@ -6,6 +6,7 @@ import type { ResearchNode, ReviewStatus } from './types'
 
 type EvidenceInspectorProps = {
   node: ResearchNode
+  reviewPending?: boolean
   onClose: () => void
   onOpenReader: (blockId: string) => void
   onReview: (
@@ -17,6 +18,7 @@ type EvidenceInspectorProps = {
 
 export function EvidenceInspector({
   node,
+  reviewPending = false,
   onClose,
   onOpenReader,
   onReview
@@ -91,13 +93,13 @@ export function EvidenceInspector({
         <h3 id="human-review-title">Review without erasing the draft</h3>
         <label>
           Review note <span>(optional)</span>
-          <textarea value={reviewNote} onChange={(event) => setReviewNote(event.currentTarget.value)} />
+          <textarea disabled={reviewPending} value={reviewNote} onChange={(event) => setReviewNote(event.currentTarget.value)} />
         </label>
         <div className="review-actions">
-          <button type="button" onClick={() => onReview('confirmed', null, optionalNote)} aria-label="Confirm claim">
+          <button type="button" disabled={reviewPending} onClick={() => onReview('confirmed', null, optionalNote)} aria-label="Confirm claim">
             <Check aria-hidden="true" size={16} /> Confirm
           </button>
-          <button type="button" onClick={() => onReview('questioned', null, optionalNote)} aria-label="Question claim">
+          <button type="button" disabled={reviewPending} onClick={() => onReview('questioned', null, optionalNote)} aria-label="Question claim">
             <HelpCircle aria-hidden="true" size={16} /> Question
           </button>
         </div>
@@ -105,6 +107,7 @@ export function EvidenceInspector({
           Corrected claim
           <textarea
             value={correctedClaim}
+            disabled={reviewPending}
             onChange={(event) => setCorrectedClaim(event.currentTarget.value)}
             aria-label="Corrected claim"
           />
@@ -112,7 +115,7 @@ export function EvidenceInspector({
         <button
           type="button"
           className="save-correction"
-          disabled={!correctedClaim.trim()}
+          disabled={reviewPending || !correctedClaim.trim()}
           onClick={() => onReview('corrected', correctedClaim.trim(), optionalNote)}
           aria-label="Save correction"
         >

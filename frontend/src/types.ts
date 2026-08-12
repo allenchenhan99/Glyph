@@ -64,6 +64,7 @@ export type ReaderPayload = {
 }
 
 export type ResearchNodeType =
+  | 'research_question'
   | 'author_claim'
   | 'economic_mechanism'
   | 'hypothesis'

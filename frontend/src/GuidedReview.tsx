@@ -21,7 +21,7 @@ const guidedStages: readonly GuidedStage[] = [
   {
     title: 'Research question',
     description: 'What does the paper claim it is trying to explain or test?',
-    types: ['author_claim', 'hypothesis', 'economic_mechanism'],
+    types: ['research_question', 'author_claim', 'hypothesis', 'economic_mechanism'],
     issueCategory: 'question'
   },
   {

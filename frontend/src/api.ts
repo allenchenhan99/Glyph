@@ -274,6 +274,7 @@ function isReaderPayload(value: unknown): value is ReaderPayload {
 }
 
 const researchNodeTypes: readonly ResearchNodeType[] = [
+  'research_question',
   'author_claim',
   'economic_mechanism',
   'hypothesis',

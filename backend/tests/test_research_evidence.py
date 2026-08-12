@@ -28,6 +28,7 @@ from glyph.research_evidence import (
 )
 
 EXPECTED_NODE_TYPES = {
+    "research_question",
     "author_claim",
     "economic_mechanism",
     "hypothesis",

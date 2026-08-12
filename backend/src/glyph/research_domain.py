@@ -5,6 +5,7 @@ from typing import Literal, TypeVar, cast
 RESEARCH_MAP_SCHEMA_VERSION = "1"
 
 NodeType = Literal[
+    "research_question",
     "author_claim",
     "economic_mechanism",
     "hypothesis",
@@ -39,6 +40,7 @@ LocatorType = Literal["text_span", "equation", "table", "figure", "caption"]
 ReviewStatus = Literal["confirmed", "questioned", "corrected"]
 
 NODE_TYPES: tuple[NodeType, ...] = (
+    "research_question",
     "author_claim",
     "economic_mechanism",
     "hypothesis",

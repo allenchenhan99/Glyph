@@ -17,6 +17,7 @@ type ResearchMapProps = {
   inspectorOpen: boolean
   notice: ResearchMapNotice
   job?: ResearchMapJob | null
+  reviewPending?: boolean
   onSelectNode: (nodeId: string) => void
   onOpenInspector: () => void
   onCloseInspector: () => void
@@ -37,7 +38,10 @@ type OutlineCategory = {
 }
 
 const categories: readonly OutlineCategory[] = [
-  { title: 'Research question', types: ['author_claim', 'hypothesis', 'economic_mechanism'] },
+  {
+    title: 'Research question',
+    types: ['research_question', 'author_claim', 'hypothesis', 'economic_mechanism']
+  },
   { title: 'Data and sample', types: ['data_and_sample', 'data_source', 'sample_filter'] },
   {
     title: 'Signal definition',
@@ -72,6 +76,7 @@ export function ResearchMap({
   inspectorOpen,
   notice,
   job = null,
+  reviewPending = false,
   onSelectNode,
   onOpenInspector,
   onCloseInspector,
@@ -188,7 +193,7 @@ export function ResearchMap({
           })}
         </nav>
 
-        <main className="map-review-main">
+        <section className="map-review-main" aria-label="Guided Research Map review">
           <GuidedReview
             map={map}
             step={guidedStep}
@@ -218,11 +223,12 @@ export function ResearchMap({
               ) : null}
             </section>
           ) : null}
-        </main>
+        </section>
 
         {inspectorOpen && selectedNode ? (
           <EvidenceInspector
             node={selectedNode}
+            reviewPending={reviewPending}
             onClose={onCloseInspector}
             onOpenReader={onOpenReader}
             onReview={onReview}

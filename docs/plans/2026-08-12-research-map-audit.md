@@ -12,18 +12,18 @@ The audit covers the approved evidence-first Research Map v1: controlled ontolog
 
 | Gate | Result |
 | --- | --- |
-| Backend tests and branch coverage | 151 passed; 90.56% total coverage; 85% gate passed |
+| Backend tests and branch coverage | 152 passed; 90.58% total coverage; 85% gate passed |
 | Backend formatting and lint | Ruff format and lint passed across source and tests |
 | Backend typing | mypy passed across `backend/src/glyph` |
 | Backend security scan | Bandit passed with no findings |
 | Python dependency audit | No known vulnerabilities; the local unpublished `glyph-backend` package is not on PyPI and was skipped |
-| Frontend tests and coverage | 46 passed; 77.71% statements, 80.73% branches, 83.08% functions, 79.04% lines |
+| Frontend tests and coverage | 50 passed; 78.29% statements, 81.23% branches, 83.08% functions, 79.58% lines |
 | Frontend dependency audit | npm reported zero vulnerabilities |
 | Frontend production build | TypeScript and Vite build passed |
 | Database compatibility | Fresh schema, recognized legacy schema, data preservation, map migration, and unknown-partial-schema rejection passed |
 | Research benchmark | Deterministic empirical-asset-pricing fixture passed exact-anchor, six-category, statistical-evidence, `not_reported`, provider-call, and normalization checks |
 
-The production build reports a non-blocking 500.85 kB JavaScript chunk warning. This does not affect correctness or the current CI gate; code splitting is a measured performance follow-up rather than a release blocker for the local v1 workspace.
+The production build reports a non-blocking 501.27 kB JavaScript chunk warning. This does not affect correctness or the current CI gate; code splitting is a measured performance follow-up rather than a release blocker for the local v1 workspace.
 
 ## Browser acceptance
 
