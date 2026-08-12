@@ -110,6 +110,7 @@ export function ResearchMap({
   }
 
   const selectedNode = map.nodes.find((node) => node.id === selectedNodeId) ?? map.nodes[0] ?? null
+  const generationActive = job && (job.status === 'queued' || job.status === 'running')
 
   return (
     <section className="research-map-shell" aria-label="Research Map workspace">
@@ -125,7 +126,19 @@ export function ResearchMap({
             <span className="review-badge"><CircleCheck aria-hidden="true" size={14} /> Complete map</span>
           )}
           {map.is_stale ? (
-            <span className="conflict-badge"><ShieldAlert aria-hidden="true" size={14} /> Source changed</span>
+            <>
+              <span className="conflict-badge"><ShieldAlert aria-hidden="true" size={14} /> Source changed</span>
+              {generationActive ? (
+                <div className="map-job-progress compact" role="status">
+                  <div><span>{job.stage}</span><strong>{Math.round(job.progress)}%</strong></div>
+                  <progress value={job.progress} max="100">{job.progress}%</progress>
+                </div>
+              ) : (
+                <button type="button" className="primary-action" onClick={onGenerate}>
+                  Generate new version
+                </button>
+              )}
+            </>
           ) : null}
         </div>
       </header>

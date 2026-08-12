@@ -635,6 +635,11 @@ h1 {
   accent-color: var(--evidence);
 }
 
+.map-job-progress.compact {
+  width: 180px;
+  margin-top: 0;
+}
+
 .research-map-shell {
   min-width: 0;
   overflow: hidden;

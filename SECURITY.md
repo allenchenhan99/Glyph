@@ -18,8 +18,12 @@ Uploaded and discovered documents are untrusted input. Glyph bounds uploads and 
 
 When `GLYPH_AI_MODE` selects Claude Code or Codex CLI, extracted document text is sent to that provider under the authenticated user's account, terms, retention policy, and usage limits. Glyph does not copy provider credentials into its database.
 
+Research Map sends bounded Reader blocks to the selected CLI in two schema-constrained phases: evidence candidate extraction, then synthesis from validated evidence. Prompts mark document content as untrusted data and Glyph supplies no tool or network access to the CLI invocation. These controls do not make model output trustworthy; inspect exact evidence and original pages.
+
+Research Map jobs run in one local process and one worker. This is not a hardened distributed queue and must not be scaled by starting multiple public-facing application processes. Failed generation retains the previous active version and records a sanitized public error; local server logs can contain diagnostic context and must be protected.
+
 ## Data, backups, and upgrades
 
 The SQLite database, uploads, rendered pages, and AI cache are stored under `data/`; discovered input files are stored under `book/` unless overridden. Stop Glyph before making a consistent backup, then copy both directories to protected storage. Treat backups as sensitive because they may contain complete source text and translations.
 
-Application startup applies forward Alembic migrations. Before upgrading across revisions, back up `data/` and `book/`. The compatibility migration preserves the public legacy schema and rejects unknown partial schemas instead of deleting data. There is no automatic downgrade or backup facility.
+Application startup applies forward Alembic migrations. Before upgrading across revisions, back up `data/` and `book/`. The compatibility and Research Map migrations preserve public legacy/Reader data and reject unknown partial schemas instead of deleting data. Immutable maps retain cited historical Reader blocks, so deleting only current document outputs is not a safe erasure procedure. There is no automatic downgrade, backup, secure-delete, or retention-policy facility.

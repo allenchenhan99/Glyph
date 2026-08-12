@@ -194,6 +194,7 @@ export function App() {
         review_note: reviewNote
       })
       dispatchMap({ type: 'reviewSaved', nodeId: node.id, review: saved })
+      await refreshDocuments()
     } catch (error) {
       console.error(error)
       const message =

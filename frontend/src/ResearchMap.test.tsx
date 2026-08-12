@@ -41,11 +41,14 @@ describe('ResearchMap', () => {
   })
 
   it('makes partial and stale trust states visible', () => {
-    render(<ResearchMap {...defaultProps} />)
+    const onGenerate = vi.fn()
+    render(<ResearchMap {...defaultProps} onGenerate={onGenerate} />)
 
     expect(screen.getByText('Partial map')).toBeInTheDocument()
     expect(screen.getByText('Source changed')).toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('missing implementation cost evidence')
+    fireEvent.click(screen.getByRole('button', { name: 'Generate new version' }))
+    expect(onGenerate).toHaveBeenCalledTimes(1)
   })
 
   it('shows an absent-map generation action and local-provider privacy notice', () => {
@@ -79,5 +82,28 @@ describe('ResearchMap', () => {
 
     expect(screen.getByRole('status')).toHaveTextContent('validate evidence64%')
     expect(screen.queryByRole('button', { name: 'Generate Research Map' })).not.toBeInTheDocument()
+  })
+
+  it('replaces stale regeneration with persistent job progress', () => {
+    render(
+      <ResearchMap
+        {...defaultProps}
+        job={{
+          id: 'job-2',
+          document_id: 'doc-1',
+          map_version_id: null,
+          status: 'running',
+          stage: 'synthesize map',
+          progress: 42,
+          error_message: null,
+          attempt_count: 1,
+          created_at: '2026-08-12T12:00:00Z',
+          updated_at: '2026-08-12T12:00:01Z'
+        }}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('synthesize map42%')
+    expect(screen.queryByRole('button', { name: 'Generate new version' })).not.toBeInTheDocument()
   })
 })

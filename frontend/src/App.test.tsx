@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
@@ -124,6 +124,27 @@ describe('App', () => {
     )
     expect(conflict).toHaveAttribute('role', 'alert')
     expect(screen.getAllByText('AI draft claim 0').length).toBeGreaterThan(0)
+  })
+
+  it('refreshes the authoritative Library summary after a saved review', async () => {
+    mockedReviewResearchNode.mockResolvedValue({
+      id: 'review-1',
+      node_id: 'node-0',
+      status: 'confirmed',
+      corrected_claim_text: null,
+      review_note: null,
+      based_on_map_version_id: 'map-1',
+      based_on_node_signature: '1'.repeat(64),
+      revision_number: 1,
+      supersedes_review_id: null,
+      reviewed_at: '2026-08-12T12:01:00Z'
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Research Map for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm claim' }))
+
+    expect(await screen.findByText('Review saved.')).toBeInTheDocument()
+    await waitFor(() => expect(mockedListDocuments).toHaveBeenCalledTimes(2))
   })
 
   it('deep-links exact evidence into Reader and restores Map context on return', async () => {

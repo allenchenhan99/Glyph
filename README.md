@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml/badge.svg)](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml)
 
-Glyph is a local-first reading workspace for turning PDFs and document images into aligned source and Traditional Chinese reading blocks. It extracts text, translates through the user's own authenticated Claude Code or Codex CLI, reconstructs formulas as LaTeX, and renders them with KaTeX.
+Glyph is a local-first, evidence-first research workspace for Chinese-speaking quantitative-finance readers. It turns PDFs and document images into aligned source/Traditional Chinese blocks, then maps a paper's research question, data, signal, method, result, and limitations back to exact bilingual evidence.
 
 Glyph is currently pre-1.0. It is designed for a trusted single user on one machine, not as an authenticated or internet-facing service.
 
@@ -18,6 +18,11 @@ Glyph is currently pre-1.0. It is designed for a trusted single user on one mach
 - Bound uploads and external tools by content type, size, and timeout.
 - Read source and Traditional Chinese side by side with paired hover states.
 - Render reconstructed formulas as accessible KaTeX/MathML with links to original pages.
+- Generate immutable Research Map versions with a controlled quantitative-finance ontology.
+- Validate exact evidence anchors before claim synthesis and expose partial/conflicting states.
+- Complete a bounded five-step review with verbatim English and aligned Traditional Chinese evidence.
+- Confirm, question, or correct claims without overwriting the AI draft.
+- Deep-link Map evidence into Reader blocks and preserve context on return.
 
 Section summaries currently use deterministic placeholder text. Full AI-generated document and section summaries remain a future milestone.
 
@@ -72,7 +77,7 @@ Start both services:
 ./scripts/dev.sh
 ```
 
-Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Open**. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
+Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Research Map**. Generate the map, follow the five-step review, and open exact evidence in the full Reader. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
 
 Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
 
@@ -123,6 +128,8 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | `GLYPH_OCR_MODE` | `mock` | Text-backed extraction or `unlimited_ocr` |
 | `GLYPH_OCR_TIMEOUT_SECONDS` | `300` | Timeout for one OCR invocation |
 | `GLYPH_PAGE_RENDER_TIMEOUT_SECONDS` | `30` | Timeout for rendering one PDF page |
+| `GLYPH_RESEARCH_JOB_MAX_ATTEMPTS` | `2` | Interrupted map-job attempts before safe failure |
+| `GLYPH_RESEARCH_CLI_BLOCK_BATCH_SIZE` | `12` | Reader blocks per Research Map extraction request |
 | `GLYPH_BOOK_DIR` | `book/` | Optional source-document directory override |
 | `GLYPH_DATA_DIR` | `data/` | Optional runtime-data directory override |
 | `GLYPH_DATABASE_URL` | local SQLite | Optional SQLAlchemy database URL |
@@ -160,7 +167,7 @@ npm run build
 
 The backend API runs on `http://127.0.0.1:8000`; Vite proxies `/api` requests from `http://127.0.0.1:5173`.
 
-Database changes are managed by Alembic and applied automatically at backend startup. The migration bootstrap recognizes the original public schema and preserves its data; it rejects unknown partial schemas instead of resetting them. Back up `data/` and `book/` before upgrading. See [CONTRIBUTING.md](CONTRIBUTING.md) for architecture and pull-request expectations.
+Database changes are managed by Alembic and applied automatically at backend startup. The migration bootstrap recognizes the original public schema and preserves its data; it rejects unknown partial schemas instead of resetting them. Back up `data/` and `book/` before upgrading. See the [Research Map guide](docs/research-map.md) for evidence guarantees, version/review semantics, recovery, and trust boundaries, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull-request expectations.
 
 ## Project Layout
 
@@ -171,6 +178,7 @@ backend/       FastAPI, SQLAlchemy, OCR and CLI adapters
 frontend/      React, TypeScript, Vite, and KaTeX reader
 scripts/       setup and local development commands
 docs/plans/    architecture and implementation decisions
+docs/adr/      durable architectural decisions
 ```
 
 ## Contributing and Security

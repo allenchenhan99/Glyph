@@ -20,6 +20,11 @@ For deterministic local development, set `GLYPH_AI_MODE=mock`. Start the app wit
 - `backend/src/glyph/ocr.py` and `backend/src/glyph/cli_ai.py` are external-process trust boundaries. Keep argv execution, timeouts, and sanitized errors intact.
 - `backend/migrations/` is the only supported schema evolution path. Never replace migrations with `create_all()` or destructive startup resets.
 - `frontend/src/api.ts` validates data at the HTTP boundary; components consume typed values.
+- `backend/src/glyph/research_domain.py` is the canonical Research Map vocabulary. Do not add provider-only node types or duplicate controlled values in routes.
+- `backend/src/glyph/research_evidence.py` validates exact source anchors before synthesis. Never accept provider page/document identity without deriving it from the block.
+- `backend/src/glyph/research_maps.py` owns immutable versions, atomic activation, review overlays, and deterministic diffs.
+- `backend/src/glyph/research_jobs.py` is a single-process local executor boundary, not a distributed queue.
+- `frontend/src/researchMapState.ts` is the Map/Reader/review state machine; do not replace it with scattered component booleans.
 
 Runtime documents and generated data belong in ignored `book/` and `data/` paths. Never add real user documents, databases, credentials, AI cache entries, or generated page images to a commit.
 
@@ -29,6 +34,14 @@ Runtime documents and generated data belong in ignored `book/` and `data/` paths
 2. Make the smallest coherent implementation change.
 3. Run the relevant focused tests, then every quality gate below.
 4. Update configuration, migrations, and documentation in the same pull request when behavior changes.
+
+For Research Map changes, also run the deterministic benchmark and verify that every normal supported claim has accepted evidence:
+
+```bash
+.venv/bin/pytest backend/tests/test_research_benchmark.py -q
+```
+
+New ontology values require a design update, domain/runtime-schema tests, API guard tests, and a migration review when persisted meaning changes. Never silently reinterpret an existing value. Human review must stay append-only and AI drafts immutable.
 
 Backend gates, run from the repository root:
 
