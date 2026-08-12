@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, TypeVar, cast
+from typing import Literal, TypeVar
 
 RESEARCH_MAP_SCHEMA_VERSION = "1"
 
@@ -120,7 +120,7 @@ def _validate_controlled_value(
 ) -> ControlledValue:
     if value not in allowed:
         raise InvalidDomainValueError(f"Unknown {field_name}: {value}")
-    return cast(ControlledValue, value)
+    return value
 
 
 def validate_node_type(value: str) -> NodeType:
