@@ -16,4 +16,5 @@ Notable user-facing changes are documented here. Glyph is pre-1.0 and does not y
 
 - The document catalog now includes browser uploads after refresh and restart.
 - Reader snapshot replacement is atomic and concurrent processing returns a conflict.
+- Failed processing jobs retain safe public errors and are never presented as successful.
 - The UI presents backend-safe error details and warns when a reader snapshot is stale.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved for implementation. The project owner delegated the first-stage plan decision, and this design preserves existing SQLite data and previously processed reader content by default.
+Implemented and verified on 2026-08-12. The project owner delegated the first-stage plan decision, and the completed design preserves existing SQLite data and previously processed reader content by default. See the [completion audit](2026-08-12-reliability-baseline-audit.md) for traceable evidence.
 
 ## Product boundary
 
