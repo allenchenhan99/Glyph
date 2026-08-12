@@ -18,15 +18,20 @@ type ReaderProps = {
   focusBlockId?: string | null
   citingNodes?: Array<{ id: string; title: string }>
   onReturnToMap?: () => void
+  onReturn?: () => void
+  returnLabel?: string
 }
 
 export function Reader({
   payload,
   focusBlockId = null,
   citingNodes = [],
-  onReturnToMap
+  onReturnToMap,
+  onReturn,
+  returnLabel = 'Research Map'
 }: ReaderProps) {
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null)
+  const returnAction = onReturn ?? onReturnToMap
 
   const firstBlockBySectionPath = useMemo(() => {
     const targets = new Map<string, string>()
@@ -72,9 +77,9 @@ export function Reader({
             <h2>{payload.document.title}</h2>
           </div>
           <div className="reader-header-actions">
-            {onReturnToMap ? (
-              <button type="button" className="text-button" onClick={onReturnToMap}>
-                <ArrowLeft aria-hidden="true" size={16} /> Return to Research Map
+            {returnAction ? (
+              <button type="button" className="text-button" onClick={returnAction}>
+                <ArrowLeft aria-hidden="true" size={16} /> Return to {returnLabel}
               </button>
             ) : null}
             <div className="reader-stat">

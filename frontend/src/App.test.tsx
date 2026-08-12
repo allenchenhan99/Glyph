@@ -11,6 +11,7 @@ import {
   getReader,
   listDocuments,
   processDocument,
+  resolveImplementationContractItem,
   reviewResearchNode,
   uploadDocument
 } from './api'
@@ -34,6 +35,7 @@ vi.mock('./api', async (importOriginal) => {
     enqueueImplementationContract: vi.fn(),
     getImplementationContractJob: vi.fn(),
     getActiveImplementationContract: vi.fn(),
+    resolveImplementationContractItem: vi.fn(),
     reviewResearchNode: vi.fn()
   }
 })
@@ -46,6 +48,7 @@ const mockedGetActiveResearchMap = vi.mocked(getActiveResearchMap)
 const mockedEnqueueImplementationContract = vi.mocked(enqueueImplementationContract)
 const mockedGetImplementationContractJob = vi.mocked(getImplementationContractJob)
 const mockedGetActiveImplementationContract = vi.mocked(getActiveImplementationContract)
+const mockedResolveImplementationContractItem = vi.mocked(resolveImplementationContractItem)
 const mockedReviewResearchNode = vi.mocked(reviewResearchNode)
 
 const readerPayload: ReaderPayload = {
@@ -306,9 +309,9 @@ describe('App', () => {
     expect(screen.getByText('Current · partial')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Resume Contract for sample.pdf' }))
-    expect(await screen.findByLabelText('Implementation Contract workspace')).toHaveTextContent(
-      'Contract ready for review'
-    )
+    expect(
+      await screen.findByRole('navigation', { name: 'Implementation Contract outline' })
+    ).toBeInTheDocument()
     expect(mockedGetActiveImplementationContract).toHaveBeenCalledWith('doc-1')
   })
 
@@ -378,13 +381,81 @@ describe('App', () => {
       await screen.findByRole('button', { name: 'Build Implementation Contract' })
     )
 
-    expect(await screen.findByLabelText('Implementation Contract workspace')).toHaveTextContent(
-      'Contract ready for review'
-    )
+    expect(
+      await screen.findByRole('navigation', { name: 'Implementation Contract outline' })
+    ).toBeInTheDocument()
     expect(mockedEnqueueImplementationContract).toHaveBeenCalledWith('doc-1', 'map-1')
     expect(mockedGetImplementationContractJob).toHaveBeenCalledWith('contract-job-1')
     expect(mockedGetActiveImplementationContract).toHaveBeenCalledWith('doc-1')
     await waitFor(() => expect(mockedListDocuments).toHaveBeenCalledTimes(2))
+  })
+
+  it('opens exact Contract evidence in Reader and returns to the preserved Contract item', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedGetReader.mockResolvedValue({
+      ...readerPayload,
+      blocks: [{ ...readerPayload.blocks[0], id: 'block-1' }]
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open evidence E01 in Reader' }))
+
+    expect(await screen.findByTestId('reader-row-block-1')).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: 'Return to Implementation Contract' }))
+    expect(
+      await screen.findByLabelText('Contract Inspector for Signal direction')
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Signal direction' })).toHaveAttribute(
+      'aria-current',
+      'true'
+    )
+  })
+
+  it('rolls back an optimistic Contract decision after a signature conflict', async () => {
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedResolveImplementationContractItem.mockRejectedValue(
+      new ApiError(409, 'The contract item changed after this review opened.')
+    )
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Universe filter' }))
+    fireEvent.change(screen.getByLabelText('Decision value'), {
+      target: { value: 'NYSE common shares' }
+    })
+    fireEvent.change(screen.getByLabelText('Decision reason'), {
+      target: { value: 'Matches the desk mandate.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save human decision' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The contract item changed after this review opened. Reload the Implementation Contract and decide again.'
+    )
+    expect(mockedResolveImplementationContractItem).toHaveBeenCalledWith(
+      'item-universe',
+      expect.objectContaining({
+        status: 'decided',
+        based_on_item_signature: 'b'.repeat(64),
+        resolved_value: { kind: 'scalar', value: 'NYSE common shares' },
+        reason: 'Matches the desk mandate.'
+      })
+    )
+    expect(screen.getByRole('group', { name: 'Resolve missing implementation value' })).toBeInTheDocument()
   })
 
   it('keeps contract polling progress visible', async () => {

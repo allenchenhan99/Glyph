@@ -1,0 +1,236 @@
+import { BookOpenText, LockKeyhole, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+
+import {
+  contractItemTypeLabel,
+  contractOriginLabel,
+  contractValueLabel
+} from './contractPresentation'
+import type { ContractNotice } from './implementationContractState'
+import type {
+  ContractResolutionStatus,
+  ContractValue,
+  ImplementationContractItem
+} from './types'
+
+type ContractInspectorProps = {
+  item: ImplementationContractItem
+  pending?: boolean
+  notice: ContractNotice
+  onClose: () => void
+  onOpenReader: (blockId: string) => void
+  onResolve: (
+    status: ContractResolutionStatus,
+    resolvedValue: ContractValue | null,
+    reason: string | null
+  ) => void
+  onRemainBlocked: () => void
+}
+
+export function ContractInspector({
+  item,
+  pending = false,
+  notice,
+  onClose,
+  onOpenReader,
+  onResolve,
+  onRemainBlocked
+}: ContractInspectorProps) {
+  const [decisionValue, setDecisionValue] = useState('')
+  const [decisionReason, setDecisionReason] = useState('')
+  const [validation, setValidation] = useState<string | null>(null)
+  const validationId = `contract-decision-validation-${item.id}`
+  const noticeId = `contract-decision-notice-${item.id}`
+  const isMissing = item.effective_origin === 'missing'
+
+  useEffect(() => {
+    setDecisionValue('')
+    setDecisionReason('')
+    setValidation(null)
+  }, [item.id])
+
+  function saveDecision() {
+    const value = decisionValue.trim()
+    const reason = decisionReason.trim()
+    if (!value) {
+      setValidation('Enter the implementation value chosen for this item.')
+      return
+    }
+    if (!reason) {
+      setValidation('Explain why this decision is appropriate.')
+      return
+    }
+    setValidation(null)
+    onResolve('decided', { kind: 'scalar', value }, reason)
+  }
+
+  function markNotApplicable() {
+    const reason = decisionReason.trim()
+    if (!reason) {
+      setValidation('Explain why this item is not applicable.')
+      return
+    }
+    setValidation(null)
+    onResolve('not_applicable', null, reason)
+  }
+
+  const describedBy = [validation ? validationId : null, notice ? noticeId : null]
+    .filter(Boolean)
+    .join(' ') || undefined
+
+  return (
+    <aside
+      className="contract-inspector"
+      aria-label={`Contract Inspector for ${contractItemTypeLabel(item.item_type)}`}
+    >
+      <header className="inspector-header">
+        <div>
+          <p className="kicker">Contract Inspector</p>
+          <h2>{contractItemTypeLabel(item.item_type)}</h2>
+        </div>
+        <button
+          type="button"
+          className="bare-icon-button"
+          onClick={onClose}
+          aria-label="Close Contract Inspector"
+        >
+          <X aria-hidden="true" size={18} />
+        </button>
+      </header>
+
+      <section className="contract-inspector-value" aria-label="Contract value provenance">
+        <span className={`contract-origin origin-${item.effective_origin}`}>
+          {contractOriginLabel(item.effective_origin)}
+        </span>
+        <dl>
+          <div>
+            <dt>Draft</dt>
+            <dd>{contractValueLabel(item.draft_value)}</dd>
+          </div>
+          <div>
+            <dt>Effective</dt>
+            <dd>{contractValueLabel(item.effective_value)}</dd>
+          </div>
+        </dl>
+        {item.rationale ? (
+          <div className="contract-rationale">
+            <p className="field-label">Derivation rationale</p>
+            <p>{item.rationale}</p>
+          </div>
+        ) : null}
+      </section>
+
+      {item.effective_origin === 'human_decision' && item.resolution ? (
+        <section className="contract-decision-history" aria-label="Human decision history">
+          <p className="field-label">Current decision reason</p>
+          <p>{item.resolution.reason}</p>
+          <ol>
+            {item.resolution_history.map((resolution) => (
+              <li key={resolution.id}>
+                <strong>Revision {resolution.revision_number} · {resolution.status}</strong>
+                {resolution.reason ? <span>{resolution.reason}</span> : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
+      <div className="contract-evidence-stack">
+        {item.evidence.map((evidence, index) => (
+          <article className="evidence-anchor" key={evidence.id}>
+            <div className="anchor-number" aria-hidden="true">
+              E{String(index + 1).padStart(2, '0')}
+            </div>
+            <p className="field-label">Verbatim English</p>
+            <blockquote>{evidence.quote_text}</blockquote>
+            <p className="field-label">繁體中文區塊翻譯</p>
+            <p className="translated-evidence" lang="zh-Hant">
+              {evidence.translated_text}
+            </p>
+            <p className="locator-line">
+              Page {evidence.page_number} · {evidence.locator_type} · {evidence.relation}
+            </p>
+            <button
+              type="button"
+              className="reader-link"
+              disabled={pending}
+              onClick={() => onOpenReader(evidence.block_id)}
+              aria-label={`Open evidence E${String(index + 1).padStart(2, '0')} in Reader`}
+            >
+              <BookOpenText aria-hidden="true" size={16} /> Open in Reader
+            </button>
+          </article>
+        ))}
+      </div>
+
+      {notice ? (
+        <p
+          id={noticeId}
+          className={notice.kind === 'error' ? 'map-alert' : 'map-status'}
+          role={notice.kind === 'error' ? 'alert' : 'status'}
+        >
+          {notice.message}
+        </p>
+      ) : null}
+
+      {isMissing ? (
+        <fieldset
+          className="contract-decision-form"
+          disabled={pending}
+          aria-describedby={describedBy}
+        >
+          <legend>Resolve missing implementation value</legend>
+          <p>
+            Glyph will not infer a default. Keep the blocker, record a reasoned desk decision, or
+            mark the item not applicable.
+          </p>
+          <label>
+            Decision value
+            <input
+              value={decisionValue}
+              onChange={(event) => setDecisionValue(event.currentTarget.value)}
+              aria-invalid={validation?.startsWith('Enter the implementation') || undefined}
+            />
+          </label>
+          <label>
+            Decision reason
+            <textarea
+              value={decisionReason}
+              onChange={(event) => setDecisionReason(event.currentTarget.value)}
+              aria-invalid={validation?.startsWith('Explain') || undefined}
+              aria-describedby={validation ? validationId : undefined}
+            />
+          </label>
+          {validation ? (
+            <p id={validationId} className="contract-form-error" role="alert">
+              {validation}
+            </p>
+          ) : null}
+          <div className="contract-decision-actions">
+            <button type="button" onClick={onRemainBlocked} aria-label="Keep item blocked">
+              <LockKeyhole aria-hidden="true" size={16} /> Keep blocked
+            </button>
+            <button type="button" onClick={saveDecision} aria-label="Save human decision">
+              Save decision
+            </button>
+            <button
+              type="button"
+              onClick={markNotApplicable}
+              aria-label="Mark item not applicable"
+            >
+              Not applicable
+            </button>
+          </div>
+          <button
+            type="button"
+            className="reader-link"
+            onClick={() => onOpenReader(item.evidence[0]?.block_id ?? '')}
+            aria-label="Open Reader to investigate"
+          >
+            <BookOpenText aria-hidden="true" size={16} /> Open Reader to investigate
+          </button>
+        </fieldset>
+      ) : null}
+    </aside>
+  )
+}

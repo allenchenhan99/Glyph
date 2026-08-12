@@ -12,9 +12,11 @@ import {
   getResearchMapJob,
   listDocuments,
   processDocument,
+  resolveImplementationContractItem,
   reviewResearchNode,
   uploadDocument
 } from './api'
+import { ImplementationContract } from './ImplementationContract'
 import {
   implementationContractReducer,
   initialImplementationContractState,
@@ -29,6 +31,9 @@ import {
 } from './researchMapState'
 import type {
   DocumentRecord,
+  ContractResolution,
+  ContractResolutionStatus,
+  ContractValue,
   ImplementationContractJob,
   ReaderPayload,
   ResearchNodeReview,
@@ -56,6 +61,7 @@ export function App() {
   )
   const pollController = useRef<AbortController | null>(null)
   const reviewRequestSequence = useRef(0)
+  const resolutionRequestSequence = useRef(0)
 
   useEffect(
     () => () => {
@@ -214,6 +220,22 @@ export function App() {
     }
   }
 
+  async function handleContractEvidence(blockId: string) {
+    if (!activeDocument) return
+    try {
+      setReader(await getReader(activeDocument.id))
+      dispatchContract({ type: 'openReader', blockId })
+      setReaderReturnSurface('contract')
+      setSurface('reader')
+    } catch (error) {
+      console.error(error)
+      setNotice({
+        kind: 'error',
+        message: errorMessage(error, 'The cited Reader block could not be opened.')
+      })
+    }
+  }
+
   async function handleOpenContract(document: DocumentRecord) {
     abortPolling()
     setActiveDocument(document)
@@ -294,6 +316,61 @@ export function App() {
       setSurface('contract')
     }
     setReaderReturnSurface(null)
+  }
+
+  async function handleContractResolution(
+    status: ContractResolutionStatus,
+    resolvedValue: ContractValue | null,
+    reason: string | null
+  ) {
+    const contract = contractState.contract
+    const item = contract?.items.find(
+      (value) => value.id === contractState.selectedItemId
+    )
+    if (!contract || !item || contractState.pendingResolution) return
+    const requestId = `contract-resolution-${++resolutionRequestSequence.current}`
+    const optimisticResolution: ContractResolution = {
+      id: `optimistic-${item.id}`,
+      item_id: item.id,
+      revision_number: (item.resolution?.revision_number ?? 0) + 1,
+      supersedes_resolution_id: item.resolution?.id ?? null,
+      status,
+      resolved_value: resolvedValue,
+      reason,
+      based_on_contract_version_id: contract.id,
+      based_on_item_signature: item.item_signature,
+      request_id: requestId,
+      resolved_at: new Date().toISOString()
+    }
+    dispatchContract({
+      type: 'resolutionOptimistic',
+      requestId,
+      itemId: item.id,
+      resolution: optimisticResolution
+    })
+    try {
+      const saved = await resolveImplementationContractItem(item.id, {
+        request_id: requestId,
+        status,
+        based_on_item_signature: item.item_signature,
+        resolved_value: resolvedValue,
+        reason
+      })
+      dispatchContract({
+        type: 'resolutionSaved',
+        requestId,
+        itemId: item.id,
+        resolution: saved
+      })
+      await refreshDocuments()
+    } catch (error) {
+      console.error(error)
+      const message =
+        error instanceof ApiError && error.status === 409
+          ? `${error.message} Reload the Implementation Contract and decide again.`
+          : errorMessage(error, 'The decision was not saved. Try again.')
+      dispatchContract({ type: 'resolutionConflict', requestId, message })
+    }
   }
 
   async function handleReview(
@@ -489,18 +566,51 @@ export function App() {
         )
       ) : null}
       {activeDocument && surface === 'contract' ? (
-        <ContractWorkspaceState
-          loadStatus={contractState.loadStatus}
-          job={contractState.job}
-          notice={contractState.notice}
-        />
+        contractState.loadStatus === 'ready' && contractState.contract ? (
+          <ImplementationContract
+            contract={contractState.contract}
+            selectedItemId={contractState.selectedItemId}
+            guidedStep={contractState.guidedStep}
+            inspectorOpen={contractState.inspectorOpen}
+            notice={contractState.notice}
+            resolutionPending={contractState.pendingResolution !== null}
+            onSelectItem={(itemId) => dispatchContract({ type: 'selectItem', itemId })}
+            onOpenInspector={() => dispatchContract({ type: 'openInspector' })}
+            onCloseInspector={() => dispatchContract({ type: 'closeInspector' })}
+            onGuidedNext={() => dispatchContract({ type: 'guidedNext' })}
+            onGuidedPrevious={() => dispatchContract({ type: 'guidedPrevious' })}
+            onOpenReader={(blockId) => void handleContractEvidence(blockId)}
+            onResolve={(status, value, reason) =>
+              void handleContractResolution(status, value, reason)
+            }
+            onRemainBlocked={() => dispatchContract({ type: 'closeInspector' })}
+          />
+        ) : (
+          <ContractWorkspaceState
+            loadStatus={contractState.loadStatus}
+            job={contractState.job}
+            notice={contractState.notice}
+          />
+        )
       ) : null}
       {reader && surface === 'reader' ? (
         <Reader
           payload={reader}
-          focusBlockId={mapState.readerFocusBlockId || null}
+          focusBlockId={
+            readerReturnSurface === 'contract'
+              ? contractState.readerFocusBlockId
+              : mapState.readerFocusBlockId || null
+          }
           citingNodes={
-            mapState.readerFocusBlockId
+            readerReturnSurface === 'contract' && contractState.readerFocusBlockId
+              ? (contractState.contract?.items ?? [])
+                  .filter((item) =>
+                    item.evidence.some(
+                      (evidence) => evidence.block_id === contractState.readerFocusBlockId
+                    )
+                  )
+                  .map((item) => ({ id: item.id, title: item.item_type.replaceAll('_', ' ') }))
+              : mapState.readerFocusBlockId
               ? (mapState.map?.nodes ?? [])
                   .filter((node) =>
                     node.evidence.some(
@@ -510,7 +620,12 @@ export function App() {
                   .map((node) => ({ id: node.id, title: node.title }))
               : []
           }
-          onReturnToMap={readerReturnSurface === 'map' ? handleReturnFromReader : undefined}
+          onReturn={readerReturnSurface ? handleReturnFromReader : undefined}
+          returnLabel={
+            readerReturnSurface === 'contract'
+              ? 'Implementation Contract'
+              : 'Research Map'
+          }
         />
       ) : null}
     </main>
