@@ -21,6 +21,7 @@ class Document(Base):
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     source_path: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    processed_content_hash: Mapped[str | None] = mapped_column(String(64))
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="discovered"
