@@ -5,7 +5,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, inspect
+from sqlalchemy import Engine, create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from glyph.config import Settings
@@ -31,7 +31,21 @@ def create_session_factory(settings: Settings) -> sessionmaker[Session]:
     engine = create_engine(
         settings.database_url, connect_args=sqlite_connect_args(settings.database_url)
     )
+    enable_sqlite_foreign_keys(engine)
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def enable_sqlite_foreign_keys(engine: Engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, _connection_record) -> None:  # type: ignore[no-untyped-def]
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 
 def ensure_sqlite_parent_exists(database_url: str) -> None:

@@ -21,6 +21,7 @@ const diffGroups: ReadonlyArray<{
   classification: ContractDiffClassification
   label: string
 }> = [
+  { classification: 'type_changed', label: 'Type changed' },
   { classification: 'value_changed', label: 'Value changed' },
   { classification: 'origin_changed', label: 'Origin changed' },
   { classification: 'evidence_changed', label: 'Evidence changed' },

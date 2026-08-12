@@ -76,6 +76,7 @@ def test_schema_v1_vocabulary_is_closed_and_complete():
     assert contract_domain.ISSUE_SEVERITIES == ("info", "warning", "error")
     assert contract_domain.DIFF_CLASSIFICATIONS == (
         "unchanged",
+        "type_changed",
         "value_changed",
         "origin_changed",
         "evidence_changed",
@@ -365,3 +366,15 @@ def test_item_signature_is_order_independent_for_evidence_and_change_sensitive()
         display_order=draft.display_order,
     )
     assert contract_domain.item_signature(changed, (hash_a, hash_b)) != signature
+    renamed = contract_domain.ContractItemDraft(
+        item_key="holding_period.secondary",
+        section=draft.section,
+        item_type=draft.item_type,
+        value=draft.value,
+        origin=draft.origin,
+        rationale=draft.rationale,
+        is_blocking=draft.is_blocking,
+        is_optional=draft.is_optional,
+        display_order=draft.display_order,
+    )
+    assert contract_domain.item_signature(renamed, (hash_a, hash_b)) != signature

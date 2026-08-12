@@ -277,6 +277,7 @@ export type ContractResolutionStatus =
 export type ContractIssueSeverity = 'info' | 'warning' | 'error'
 export type ContractDiffClassification =
   | 'unchanged'
+  | 'type_changed'
   | 'value_changed'
   | 'origin_changed'
   | 'evidence_changed'

@@ -14,6 +14,7 @@ import {
   getImplementationContractVersion,
   getReader,
   getResearchMapJob,
+  getResearchMapVersion,
   listDocuments,
   listImplementationContractVersions,
   processDocument,
@@ -73,6 +74,8 @@ export function App() {
   const pollController = useRef<AbortController | null>(null)
   const reviewRequestSequence = useRef(0)
   const resolutionRequestSequence = useRef(0)
+  const contractAuxRequestSequence = useRef(0)
+  const activeDocumentId = useRef<string | null>(null)
 
   useEffect(
     () => () => {
@@ -88,9 +91,27 @@ export function App() {
   }
 
   function resetContractAuxiliaryState() {
+    contractAuxRequestSequence.current += 1
     setContractVersions([])
     setContractDiff(null)
     setActivationError(null)
+  }
+
+  function beginContractAuxRequest(documentId: string) {
+    return {
+      documentId,
+      requestId: ++contractAuxRequestSequence.current
+    }
+  }
+
+  function isCurrentContractAuxRequest(request: {
+    documentId: string
+    requestId: number
+  }) {
+    return (
+      request.requestId === contractAuxRequestSequence.current &&
+      request.documentId === activeDocumentId.current
+    )
   }
 
   async function refreshDocuments() {
@@ -149,6 +170,7 @@ export function App() {
     try {
       abortPolling()
       const nextReader = await getReader(document.id)
+      activeDocumentId.current = document.id
       setActiveDocument(document)
       setReader(nextReader)
       dispatchMap({ type: 'resetWorkspace' })
@@ -169,6 +191,7 @@ export function App() {
 
   async function handleOpenMap(document: DocumentRecord) {
     abortPolling()
+    activeDocumentId.current = document.id
     setActiveDocument(document)
     setReader(null)
     setReaderReturnSurface(null)
@@ -242,9 +265,11 @@ export function App() {
   }
 
   async function handleContractEvidence(blockId: string) {
-    if (!activeDocument) return
+    if (!activeDocument || !contractState.contract) return
     try {
-      setReader(await getReader(activeDocument.id))
+      setReader(
+        await getReader(activeDocument.id, contractState.contract.source_content_hash)
+      )
       dispatchContract({ type: 'openReader', blockId })
       setReaderReturnSurface('contract')
       setSurface('reader')
@@ -261,7 +286,10 @@ export function App() {
     if (!activeDocument || !contractState.selectedItemId) return
     const returnItemId = contractState.selectedItemId
     try {
-      const map = await getActiveResearchMap(activeDocument.id)
+      if (!contractState.contract) return
+      const map = await getResearchMapVersion(
+        contractState.contract.research_map_version_id
+      )
       dispatchMap({ type: 'resetWorkspace' })
       dispatchMap({ type: 'mapLoaded', map })
       const linkedNodeExists = map.nodes.some((node) => node.id === nodeId)
@@ -306,20 +334,27 @@ export function App() {
 
   async function handleOpenContractHistory() {
     if (!activeDocument) return
+    const request = beginContractAuxRequest(activeDocument.id)
     setActivationError(null)
     try {
-      setContractVersions(await listImplementationContractVersions(activeDocument.id))
+      const versions = await listImplementationContractVersions(activeDocument.id)
+      if (!isCurrentContractAuxRequest(request)) return
+      setContractVersions(versions)
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       setActivationError(errorMessage(error, 'Could not load Contract history.'))
     }
   }
 
   async function handleSelectContractVersion(versionId: string) {
     if (!activeDocument) return
+    const request = beginContractAuxRequest(activeDocument.id)
     try {
       const contract = await getImplementationContractVersion(versionId)
+      if (!isCurrentContractAuxRequest(request)) return
       dispatchContract({ type: 'contractLoaded', documentId: activeDocument.id, contract })
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       setActivationError(errorMessage(error, 'Could not load that Contract version.'))
     }
   }
@@ -328,30 +363,39 @@ export function App() {
     versionId: string,
     againstVersionId: string
   ) {
+    if (!activeDocument) return
+    const request = beginContractAuxRequest(activeDocument.id)
     try {
-      setContractDiff(
-        await getImplementationContractDiff(versionId, againstVersionId)
-      )
+      const diff = await getImplementationContractDiff(versionId, againstVersionId)
+      if (!isCurrentContractAuxRequest(request)) return
+      setContractDiff(diff)
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       setActivationError(errorMessage(error, 'Could not compare Contract versions.'))
     }
   }
 
   async function handleActivateContractVersion(versionId: string) {
     if (!activeDocument) return
+    const request = beginContractAuxRequest(activeDocument.id)
     setActivationError(null)
     try {
       const contract = await activateImplementationContract(versionId)
+      if (!isCurrentContractAuxRequest(request)) return
       dispatchContract({ type: 'contractLoaded', documentId: activeDocument.id, contract })
-      setContractVersions(await listImplementationContractVersions(activeDocument.id))
+      const versions = await listImplementationContractVersions(activeDocument.id)
+      if (!isCurrentContractAuxRequest(request)) return
+      setContractVersions(versions)
       await refreshDocuments()
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       setActivationError(errorMessage(error, 'Could not activate that Contract version.'))
     }
   }
 
   async function handleOpenContract(document: DocumentRecord) {
     abortPolling()
+    activeDocumentId.current = document.id
     setActiveDocument(document)
     setReader(null)
     setReaderReturnSurface(null)

@@ -32,6 +32,38 @@ describe('ContractInspector', () => {
     expect(onOpenReader).toHaveBeenCalledWith('block-1')
   })
 
+  it('can confirm, question, or correct supported items', () => {
+    const onResolve = vi.fn()
+    render(
+      <ContractInspector
+        {...defaultProps}
+        item={item('item-thesis')}
+        onResolve={onResolve}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm supported item' }))
+    expect(onResolve).toHaveBeenLastCalledWith('confirmed', null, null)
+    fireEvent.change(screen.getByLabelText('Review reason'), {
+      target: { value: 'The source remains ambiguous.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Question supported item' }))
+    expect(onResolve).toHaveBeenLastCalledWith(
+      'questioned',
+      null,
+      'The source remains ambiguous.'
+    )
+    fireEvent.change(screen.getByLabelText('Corrected value'), {
+      target: { value: 'low_minus_high' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save supported-item correction' }))
+    expect(onResolve).toHaveBeenLastCalledWith(
+      'corrected',
+      { kind: 'scalar', value: 'low_minus_high' },
+      'The source remains ambiguous.'
+    )
+  })
+
   it('shows at least two anchors and rationale for derived items', () => {
     render(<ContractInspector {...defaultProps} item={item('item-data')} />)
 
@@ -52,14 +84,36 @@ describe('ContractInspector', () => {
     expect(screen.getByText('Revision 1 · decided')).toBeInTheDocument()
   })
 
-  it('offers only explicit missing-value choices and never auto-fills a default', () => {
+  it('offers only valid missing-value choices and never auto-fills a default', () => {
     render(<ContractInspector {...defaultProps} item={item('item-universe')} />)
 
     expect(screen.getByRole('button', { name: 'Keep item blocked' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save human decision' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Mark item not applicable' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mark item not applicable' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Open Reader to investigate' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /default|auto-fill/i })).not.toBeInTheDocument()
+  })
+
+  it('offers not-applicable only for optional items and a structured gross decision for costs', () => {
+    const onResolve = vi.fn()
+    const view = render(
+      <ContractInspector {...defaultProps} item={item('item-open')} onResolve={onResolve} />
+    )
+    expect(screen.getByRole('button', { name: 'Mark item not applicable' })).toBeInTheDocument()
+
+    view.rerender(
+      <ContractInspector {...defaultProps} item={item('item-friction')} onResolve={onResolve} />
+    )
+    expect(screen.queryByRole('button', { name: 'Mark item not applicable' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Decision reason'), {
+      target: { value: 'Reproduce the paper’s reported gross returns.' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Record gross replication' }))
+    expect(onResolve).toHaveBeenCalledWith(
+      'decided',
+      { kind: 'scalar', value: 'gross_replication' },
+      'Reproduce the paper’s reported gross returns.'
+    )
   })
 
   it('associates validation and server conflicts with the decision form', () => {
@@ -67,7 +121,7 @@ describe('ContractInspector', () => {
     const view = render(
       <ContractInspector
         {...defaultProps}
-        item={item('item-universe')}
+        item={item('item-open')}
         onResolve={onResolve}
       />
     )
@@ -94,7 +148,7 @@ describe('ContractInspector', () => {
     view.rerender(
       <ContractInspector
         {...defaultProps}
-        item={item('item-universe')}
+        item={item('item-open')}
         notice={{ kind: 'error', message: 'This item changed. Reload the contract.' }}
       />
     )
@@ -111,7 +165,7 @@ describe('ContractInspector', () => {
     const view = render(
       <ContractInspector
         {...defaultProps}
-        item={item('item-universe')}
+        item={item('item-open')}
         onResolve={onResolve}
       />
     )
@@ -122,7 +176,7 @@ describe('ContractInspector', () => {
     )
 
     view.rerender(
-      <ContractInspector {...defaultProps} item={item('item-universe')} pending />
+      <ContractInspector {...defaultProps} item={item('item-open')} pending />
     )
     expect(screen.getByLabelText('Decision value')).toBeDisabled()
     expect(screen.getByLabelText('Decision reason')).toBeDisabled()

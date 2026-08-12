@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -494,10 +494,7 @@ def append_contract_resolution(
         value=value,
         reason=normalized_reason,
     )
-    if resolution_draft.status == "not_applicable" and not (
-        item.is_optional
-        or (item.origin == "missing" and item.item_type == "transaction_cost")
-    ):
+    if resolution_draft.status == "not_applicable" and not item.is_optional:
         raise ImplementationContractConflictError(
             "This mandatory contract item cannot be marked not applicable"
         )
@@ -554,7 +551,9 @@ def append_contract_resolution(
         with session.begin_nested():
             session.add(resolution)
             session.flush()
-            _refresh_affected_contract_audits(session, version, item.item_signature)
+            _refresh_affected_contract_audits(
+                session, version, item.item_key, item.item_signature
+            )
     except IntegrityError as exc:
         raced = session.scalar(
             select(ImplementationContractResolution).where(
@@ -628,15 +627,14 @@ def _refresh_contract_audit(
                 source_label=anchor.source_label,
             )
         )
-    resolution_models = _load_resolution_models(
+    resolution_rows = _load_resolution_models(
         session,
         _lineage_version_ids(session, version),
-        item_ids,
-        {item.item_signature for item in items},
+        items,
     )
-    effective_by_signature = {
-        resolution.based_on_item_signature: resolution
-        for resolution in resolution_models
+    effective_by_identity = {
+        (item_key, resolution.based_on_item_signature): resolution
+        for resolution, item_key in resolution_rows
     }
     effective_items: list[EffectiveContractItem] = []
     for item in items:
@@ -656,7 +654,9 @@ def _refresh_contract_audit(
             is_optional=item.is_optional,
             display_order=item.display_order,
         )
-        resolution_model = effective_by_signature.get(item.item_signature)
+        resolution_model = effective_by_identity.get(
+            (item.item_key, item.item_signature)
+        )
         resolution = (
             ContractResolutionDraft(
                 status=validate_resolution_status(resolution_model.status),
@@ -694,6 +694,7 @@ def _refresh_contract_audit(
 def _refresh_affected_contract_audits(
     session: Session,
     source_version: ImplementationContractVersion,
+    item_key: str,
     item_signature_value: str,
 ) -> None:
     candidates = (
@@ -706,6 +707,7 @@ def _refresh_affected_contract_audits(
             )
             .where(
                 ImplementationContractVersion.document_id == source_version.document_id,
+                ImplementationContractItem.item_key == item_key,
                 ImplementationContractItem.item_signature == item_signature_value,
             )
         )
@@ -801,28 +803,28 @@ def load_implementation_contract(
         if issue.item_id is not None:
             issues_by_item[issue.item_id].append(issue)
 
-    resolution_models = _load_resolution_models(
+    resolution_rows = _load_resolution_models(
         session,
         _lineage_version_ids(session, version),
-        item_ids,
-        {item.item_signature for item in item_models},
+        item_models,
     )
-    history_by_signature: defaultdict[str, list[ContractResolutionView]] = defaultdict(
-        list
+    history_by_identity: defaultdict[tuple[str, str], list[ContractResolutionView]] = (
+        defaultdict(list)
     )
-    effective_by_signature: dict[str, ContractResolutionView] = {}
-    for resolution_model in resolution_models:
+    effective_by_identity: dict[tuple[str, str], ContractResolutionView] = {}
+    for resolution_model, item_key in resolution_rows:
         resolution = _resolution_view(resolution_model)
-        history_by_signature[resolution.based_on_item_signature].append(resolution)
-        effective_by_signature[resolution.based_on_item_signature] = resolution
+        identity = (item_key, resolution.based_on_item_signature)
+        history_by_identity[identity].append(resolution)
+        effective_by_identity[identity] = resolution
 
     item_views = tuple(
         _item_view(
             item,
             tuple(evidence_by_item[item.id]),
             tuple(issues_by_item[item.id]),
-            effective_by_signature.get(item.item_signature),
-            tuple(history_by_signature[item.item_signature]),
+            effective_by_identity.get((item.item_key, item.item_signature)),
+            tuple(history_by_identity[(item.item_key, item.item_signature)]),
         )
         for item in item_models
     )
@@ -863,7 +865,11 @@ def load_implementation_contract(
 def list_implementation_contract_versions(
     session: Session,
     document_id: str,
+    *,
+    limit: int = 50,
 ) -> tuple[ImplementationContractVersionSummaryView, ...]:
+    if not 1 <= limit <= 100:
+        raise ValueError("Contract history limit must be between 1 and 100")
     document = session.get(Document, document_id)
     if document is None:
         raise ImplementationContractNotFoundError("Document not found")
@@ -874,10 +880,19 @@ def list_implementation_contract_versions(
             ImplementationContractVersion.created_at.desc(),
             ImplementationContractVersion.id.desc(),
         )
+        .limit(limit)
     ).all()
+    map_ids = tuple({version.research_map_version_id for version in versions})
+    maps_by_id = {
+        map_version.id: map_version
+        for map_version in session.scalars(
+            select(ResearchMapVersion).where(ResearchMapVersion.id.in_(map_ids))
+        ).all()
+    }
+    map_signatures = _research_map_signatures(session, map_ids, maps_by_id)
     summaries: list[ImplementationContractVersionSummaryView] = []
     for version in versions:
-        map_version = session.get(ResearchMapVersion, version.research_map_version_id)
+        map_version = maps_by_id.get(version.research_map_version_id)
         is_current = (
             document.status == "completed"
             and document.processed_content_hash == document.content_hash
@@ -885,8 +900,7 @@ def list_implementation_contract_versions(
             and map_version is not None
             and map_version.document_id == document.id
             and map_version.source_content_hash == document.content_hash
-            and version.research_map_signature
-            == _research_map_signature(session, map_version)
+            and version.research_map_signature == map_signatures[map_version.id]
         )
         summaries.append(
             ImplementationContractVersionSummaryView(
@@ -1178,6 +1192,8 @@ def _diff_classification(
         return validate_diff_classification("added")
     if current is None:
         return validate_diff_classification("removed")
+    if current.item_type != previous.item_type:
+        return validate_diff_classification("type_changed")
     if current.draft_value_json != previous.draft_value_json:
         return validate_diff_classification("value_changed")
     if current.origin != previous.origin:
@@ -1258,13 +1274,14 @@ def _item_view(
 def _load_resolution_models(
     session: Session,
     lineage_version_ids: set[str],
-    item_ids: Sequence[str],
-    item_signatures: set[str],
-) -> Sequence[ImplementationContractResolution]:
-    if not item_ids and not item_signatures:
+    items: Sequence[ImplementationContractItem],
+) -> Sequence[tuple[ImplementationContractResolution, str]]:
+    if not items:
         return ()
-    return session.scalars(
-        select(ImplementationContractResolution)
+    item_ids = [item.id for item in items]
+    item_identities = {(item.item_key, item.item_signature) for item in items}
+    rows = session.execute(
+        select(ImplementationContractResolution, ImplementationContractItem.item_key)
         .join(
             ImplementationContractItem,
             ImplementationContractResolution.item_id == ImplementationContractItem.id,
@@ -1280,9 +1297,10 @@ def _load_resolution_models(
             ),
             (
                 ImplementationContractResolution.item_id.in_(item_ids)
-                | ImplementationContractResolution.based_on_item_signature.in_(
-                    item_signatures
-                )
+                | tuple_(
+                    ImplementationContractItem.item_key,
+                    ImplementationContractResolution.based_on_item_signature,
+                ).in_(item_identities)
             ),
         )
         .order_by(
@@ -1291,6 +1309,7 @@ def _load_resolution_models(
             ImplementationContractResolution.id,
         )
     ).all()
+    return tuple((resolution, item_key) for resolution, item_key in rows)
 
 
 def _lineage_version_ids(

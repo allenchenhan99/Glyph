@@ -123,7 +123,7 @@ Generation status and readiness are deliberately independent. A successfully gen
 - `is_blocking`, `is_optional`, `display_order`
 - `item_signature`
 
-`item_signature` hashes the normalized type, draft value, origin, rationale, and sorted evidence hashes. It is the only basis for automatic resolution carry-forward.
+`item_signature` hashes the stable `item_key`, normalized type, draft value, origin, rationale, and sorted evidence hashes. Automatic resolution carry-forward requires both the same item key and a byte-identical signature.
 
 ### `implementation_contract_evidence`
 
@@ -169,7 +169,7 @@ A failure at any generation stage preserves the previous active contract. A part
 
 `implementation_ready` is allowed only when all of the following hold:
 
-- Every blocking item has a valid effective value or an explicit, valid not-applicable resolution.
+- Every blocking item has a valid effective value; `not_applicable` is valid only for fields explicitly marked optional.
 - Every effective value is backed by accepted source evidence or an auditable human resolution.
 - Every `author_explicit` item has at least one direct supporting anchor.
 - Every `derived` item has at least two supporting anchors and a non-empty rationale.
@@ -186,7 +186,7 @@ The audit emits stable issue codes. `blocked` means one or more implementation b
 
 Generating a new contract never mutates an old one. A contract is stale when the document source hash or selected Research Map signature no longer matches its inputs.
 
-Version diffs classify items as `unchanged`, `value_changed`, `origin_changed`, `evidence_changed`, `added`, or `removed`. Human resolutions carry forward only when the item signature is byte-for-byte identical. Otherwise the previous decision remains in history and the new item requires review.
+Version diffs classify items as `unchanged`, `type_changed`, `value_changed`, `origin_changed`, `evidence_changed`, `added`, or `removed`. Human resolutions carry forward only when both the stable item key and item signature are byte-for-byte identical. Otherwise the previous decision remains in history and the new item requires review.
 
 Activating a historical version is allowed only when it belongs to the document and remains internally valid. Activation does not make a stale contract current.
 
@@ -202,7 +202,7 @@ The Research Map adds `Build Implementation Contract`. The Library displays cont
 2. The center column runs a bounded fifteen-minute guided review and also exposes a structured item list.
 3. The right Evidence & Decision Inspector shows verbatim evidence, translated Reader context, origin, derivation rationale, effective value, history, and resolution controls.
 
-Selection is shared among Contract, Research Map, and Reader. Evidence deep links focus the exact persisted block; returning restores the selected contract item.
+Selection is shared among Contract, Research Map, and Reader. Historical evidence deep links load the Contract's exact retained Reader source snapshot and exact Research Map version, then focus the persisted block; returning restores the selected contract item.
 
 ### Guided review
 
@@ -215,7 +215,7 @@ The review contains six steps:
 5. Evaluation and frictions.
 6. Resolve blockers and export.
 
-Every item visibly separates AI draft from effective value and labels its origin, blocker state, evidence, and derivation chain. A missing blocker offers only explicit actions: leave blocked, make a human decision with a reason, mark not applicable with a reason, or return to the Reader. There is no accept-default action.
+Every item visibly separates AI draft from effective value and labels its origin, blocker state, evidence, and derivation chain. Supported items may be confirmed, questioned, or corrected with a reason. A missing blocker offers only explicit actions: leave blocked, make a human decision with a reason, use not-applicable when the schema marks the item optional, or return to the Reader. Gross replication is recorded as a structured transaction-cost decision, never as not-applicable. There is no accept-default action.
 
 The primary UI language is Traditional Chinese, schema keys and technical terms remain in English, and verbatim English evidence is preserved. Exports may be bilingual or English according to an explicit option.
 

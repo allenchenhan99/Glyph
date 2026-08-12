@@ -49,6 +49,7 @@ from glyph.models import (
     ResearchNode,
     ResearchNodeReview,
 )
+from glyph.pipeline import clear_document_outputs
 from glyph.research_evidence import exact_quote_hash
 
 FIXTURE_DIRECTORY = Path(__file__).parent / "fixtures" / "contracts"
@@ -129,6 +130,11 @@ class DiffClassificationProvider(MockImplementationContractProvider):
         )
         frequency = by_key["data_frequency.1"]
         by_key["data_frequency.1"] = SynthesizedContractItem(frequency.draft, ())
+        statistical_test = by_key["statistical_test.1"]
+        by_key["statistical_test.1"] = SynthesizedContractItem(
+            replace(statistical_test.draft, item_type="evaluation_metric"),
+            statistical_test.evidence_ids,
+        )
         del by_key["availability_lag.1"]
         added = SynthesizedContractItem(
             ContractItemDraft(
@@ -375,6 +381,60 @@ def test_generate_runs_the_exact_evidence_first_stage_order_and_persists_view(
     assert contract.issues
     assert all(item.item_signature for item in contract.items)
     assert all(item.evidence for item in contract.items)
+
+
+def test_reprocessing_preserves_blocks_cited_only_by_contract_evidence(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    source_text = "A Contract-only retained source anchor."
+    contract_only_block = Block(
+        id="contract-only-block",
+        document_id=document.id,
+        source_content_hash=document.content_hash,
+        order_index=99,
+        page_number=2,
+        block_type="paragraph",
+        source_text=source_text,
+        translated_text=f"繁中：{source_text}",
+    )
+    session.add_all(
+        [
+            contract_only_block,
+            ImplementationContractEvidence(
+                id="contract-only-evidence",
+                item_id=contract.items[0].id,
+                block_id=contract_only_block.id,
+                research_node_id=None,
+                locator_type="text_span",
+                quote_text=source_text,
+                quote_start=0,
+                quote_end=len(source_text),
+                source_quote_hash=exact_quote_hash(
+                    contract_only_block.id,
+                    0,
+                    len(source_text),
+                    source_text,
+                ),
+                relation="supports",
+                source_label="Contract-only anchor",
+            ),
+        ]
+    )
+    session.commit()
+    contract_only_block_id = contract_only_block.id
+
+    clear_document_outputs(session, document.id)
+    session.commit()
+
+    assert session.get(Block, contract_only_block_id) is not None
+    assert (
+        session.get(ImplementationContractEvidence, "contract-only-evidence")
+        is not None
+    )
 
 
 @pytest.mark.parametrize(
@@ -796,7 +856,7 @@ def test_corrected_and_decided_require_typed_values_and_reasons(
     assert loaded_item.effective_origin == "human_decision"
 
 
-def test_not_applicable_is_limited_to_a_reasoned_missing_cost_or_optional_item(
+def test_not_applicable_is_limited_to_optional_items(
     contract_database_factory,
 ) -> None:
     session, document, _map_version = contract_database_factory(
@@ -818,30 +878,16 @@ def test_not_applicable_is_limited_to_a_reasoned_missing_cost_or_optional_item(
             reason="Attempt to skip a mandatory field.",
             request_id="skip-weighting",
         )
-    with pytest.raises(ValueError, match="requires a reason"):
+    with pytest.raises(ImplementationContractConflictError, match="not applicable"):
         append_contract_resolution(
             session,
             cost.id,
             status="not_applicable",
             based_on_item_signature=cost.item_signature,
             value=None,
-            reason=None,
-            request_id="gross-without-reason",
+            reason="Anything at all.",
+            request_id="arbitrary-cost-skip",
         )
-
-    saved = append_contract_resolution(
-        session,
-        cost.id,
-        status="not_applicable",
-        based_on_item_signature=cost.item_signature,
-        value=None,
-        reason="Replicate gross returns exactly as reported.",
-        request_id="gross-replication",
-    )
-
-    assert saved.status == "not_applicable"
-    assert saved.reason == "Replicate gross returns exactly as reported."
-    assert load_implementation_contract(session, contract.id).readiness == "blocked"
 
 
 def test_questioned_resolution_refreshes_readiness_with_item_severity(
@@ -1140,6 +1186,52 @@ def test_resolution_carries_only_to_an_identical_item_signature(
     )
 
 
+def test_resolution_never_applies_to_a_different_item_with_same_signature(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory(
+        "cross_market_long_short.txt"
+    )
+    contract = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    weighting = _view_item(contract, "weighting_rule.1")
+    session.add(
+        ImplementationContractItem(
+            id="second-weighting-item",
+            contract_version_id=contract.id,
+            item_key="weighting_rule.2",
+            section=weighting.section,
+            item_type=weighting.item_type,
+            draft_value_json=None,
+            origin=weighting.origin,
+            rationale=weighting.rationale,
+            is_blocking=weighting.is_blocking,
+            is_optional=weighting.is_optional,
+            display_order=weighting.display_order + 1,
+            item_signature=weighting.item_signature,
+        )
+    )
+    session.commit()
+
+    resolution = append_contract_resolution(
+        session,
+        weighting.id,
+        status="decided",
+        based_on_item_signature=weighting.item_signature,
+        value=ScalarValue(kind="scalar", value="equal_weight"),
+        reason="Desk decision for the first weighting rule only.",
+        request_id="first-weighting-only",
+    )
+    loaded = load_implementation_contract(session, contract.id)
+
+    first = _view_item(loaded, weighting.item_key)
+    second = _view_item(loaded, "weighting_rule.2")
+    assert first.resolution is not None and first.resolution.id == resolution.id
+    assert second.resolution is None
+    assert second.resolution_history == ()
+
+
 def test_identical_regeneration_persists_readiness_from_carried_resolutions(
     contract_database_factory,
 ) -> None:
@@ -1261,6 +1353,7 @@ def test_diff_classifies_all_change_types_in_stable_contract_order(
     assert classifications["required_field.1"] == "value_changed"
     assert classifications["signal_direction.1"] == "origin_changed"
     assert classifications["data_frequency.1"] == "evidence_changed"
+    assert classifications["statistical_test.1"] == "type_changed"
     assert classifications["sample_filter.1"] == "added"
     assert classifications["availability_lag.1"] == "removed"
     order = [
@@ -1309,6 +1402,34 @@ def test_list_and_activate_historical_versions_preserve_stale_truth(
         ImplementationContractConflictError, match="complete or partial"
     ):
         activate_implementation_contract(session, first.id)
+
+
+def test_version_history_is_bounded_and_uses_constant_query_count(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    for _ in range(4):
+        service.generate(document.id)
+        session.commit()
+    query_count = 0
+
+    def count_query(*_args):  # type: ignore[no-untyped-def]
+        nonlocal query_count
+        query_count += 1
+
+    event.listen(session.bind, "before_cursor_execute", count_query)
+    try:
+        versions = list_implementation_contract_versions(session, document.id, limit=2)
+    finally:
+        event.remove(session.bind, "before_cursor_execute", count_query)
+
+    assert len(versions) == 2
+    assert query_count <= 5
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        list_implementation_contract_versions(session, document.id, limit=101)
 
 
 def test_version_listing_and_diff_validate_document_ownership_and_existence(

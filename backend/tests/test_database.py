@@ -292,6 +292,15 @@ def test_empty_database_is_created_at_migration_head(tmp_path):
     }
 
 
+def test_runtime_sqlite_connections_enforce_foreign_keys(tmp_path):
+    factory = create_session_factory(make_settings(tmp_path))
+
+    with factory() as session:
+        enabled = session.execute(text("PRAGMA foreign_keys")).scalar_one()
+
+    assert enabled == 1
+
+
 def test_contract_migration_preserves_reader_and_research_map(tmp_path):
     settings = make_settings(tmp_path)
     before = create_revision_0003_database(settings)

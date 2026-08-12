@@ -58,6 +58,7 @@ ResolutionStatus = Literal[
 IssueSeverity = Literal["info", "warning", "error"]
 DiffClassification = Literal[
     "unchanged",
+    "type_changed",
     "value_changed",
     "origin_changed",
     "evidence_changed",
@@ -129,6 +130,7 @@ RESOLUTION_STATUSES: tuple[ResolutionStatus, ...] = (
 ISSUE_SEVERITIES: tuple[IssueSeverity, ...] = ("info", "warning", "error")
 DIFF_CLASSIFICATIONS: tuple[DiffClassification, ...] = (
     "unchanged",
+    "type_changed",
     "value_changed",
     "origin_changed",
     "evidence_changed",
@@ -399,6 +401,7 @@ def item_signature(
     if any(_HASH_PATTERN.fullmatch(value) is None for value in hashes):
         raise InvalidContractValueError("Evidence hashes must be lowercase SHA-256")
     payload = {
+        "item_key": draft.item_key,
         "item_type": draft.item_type,
         "value": (
             json.loads(encode_contract_value(draft.value))

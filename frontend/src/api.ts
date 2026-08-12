@@ -68,8 +68,14 @@ export async function processDocument(documentId: string): Promise<ProcessingJob
   })
 }
 
-export async function getReader(documentId: string): Promise<ReaderPayload> {
-  return fetchJson(`/api/documents/${documentId}/reader`, isReaderPayload)
+export async function getReader(
+  documentId: string,
+  sourceContentHash?: string
+): Promise<ReaderPayload> {
+  const query = sourceContentHash
+    ? `?source_content_hash=${encodeURIComponent(sourceContentHash)}`
+    : ''
+  return fetchJson(`/api/documents/${documentId}/reader${query}`, isReaderPayload)
 }
 
 export async function enqueueResearchMap(documentId: string): Promise<ResearchMapJob> {

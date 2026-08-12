@@ -178,13 +178,8 @@ def _audit_resolution(
     resolution = item.resolution
     if item.draft.origin == "missing":
         resolved_by_decision = resolution is not None and resolution.status == "decided"
-        gross_replication = (
-            resolution is not None
-            and resolution.status == "not_applicable"
-            and item.draft.item_type == "transaction_cost"
-        )
         if (
-            not (resolved_by_decision or gross_replication)
+            not resolved_by_decision
             and item.draft.is_blocking
             and not item.draft.is_optional
         ):

@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from glyph.main import create_app
-from glyph.models import Document
+from glyph.models import Block, Document
 
 
 def test_documents_endpoint_discovers_supported_book_files(tmp_path, monkeypatch):
@@ -75,6 +75,48 @@ def test_changed_source_is_marked_stale_without_deleting_reader_data(
         document = session.get(Document, document_id)
         assert document is not None
         assert document.content_hash != document.processed_content_hash
+
+
+def test_reader_can_load_an_exact_retained_source_snapshot(tmp_path, monkeypatch):
+    book = tmp_path / "book"
+    book.mkdir()
+    source = book / "sample.pdf"
+    source.write_text("# Current\n\nCurrent replacement content.")
+    monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
+    monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
+    monkeypatch.setenv("GLYPH_AI_MODE", "mock")
+    client = TestClient(create_app())
+    document_id = client.get("/api/documents").json()[0]["id"]
+    client.post(f"/api/documents/{document_id}/process")
+    historical_hash = "b" * 64
+    with client.app.state.session_factory.begin() as session:
+        session.add(
+            Block(
+                id="retained-historical-block",
+                document_id=document_id,
+                source_content_hash=historical_hash,
+                order_index=0,
+                page_number=1,
+                block_type="paragraph",
+                source_text="Existing historical content.",
+                translated_text="既有歷史內容。",
+            )
+        )
+    response = client.get(
+        f"/api/documents/{document_id}/reader",
+        params={"source_content_hash": historical_hash},
+    )
+
+    assert response.status_code == 200
+    assert any(
+        "Existing historical content" in block["source_text"]
+        for block in response.json()["blocks"]
+    )
+    assert all(
+        "Current replacement content" not in block["source_text"]
+        for block in response.json()["blocks"]
+    )
 
 
 def test_missing_source_is_retained_and_restored_using_hash_state(

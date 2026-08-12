@@ -43,7 +43,9 @@ export function ContractInspector({
   const [validation, setValidation] = useState<string | null>(null)
   const validationId = `contract-decision-validation-${item.id}`
   const noticeId = `contract-decision-notice-${item.id}`
-  const isMissing = item.effective_origin === 'missing'
+  const isMissing = item.origin === 'missing'
+  const canMarkNotApplicable = isMissing && item.is_optional
+  const canRecordGrossReplication = isMissing && item.item_type === 'transaction_cost'
   const linkedResearchNodeId =
     item.evidence.find((evidence) => evidence.research_node_id !== null)?.research_node_id ?? null
 
@@ -76,6 +78,41 @@ export function ContractInspector({
     }
     setValidation(null)
     onResolve('not_applicable', null, reason)
+  }
+
+  function recordGrossReplication() {
+    const reason = decisionReason.trim()
+    if (!reason) {
+      setValidation('Explain why gross replication is appropriate.')
+      return
+    }
+    setValidation(null)
+    onResolve('decided', { kind: 'scalar', value: 'gross_replication' }, reason)
+  }
+
+  function confirmSupported() {
+    setValidation(null)
+    onResolve('confirmed', null, decisionReason.trim() || null)
+  }
+
+  function questionSupported() {
+    setValidation(null)
+    onResolve('questioned', null, decisionReason.trim() || null)
+  }
+
+  function saveCorrection() {
+    const value = decisionValue.trim()
+    const reason = decisionReason.trim()
+    if (!value) {
+      setValidation('Enter the corrected implementation value.')
+      return
+    }
+    if (!reason) {
+      setValidation('Explain why the supported value needs correction.')
+      return
+    }
+    setValidation(null)
+    onResolve('corrected', { kind: 'scalar', value }, reason)
   }
 
   const describedBy = [validation ? validationId : null, notice ? noticeId : null]
@@ -197,8 +234,8 @@ export function ContractInspector({
         >
           <legend>Resolve missing implementation value</legend>
           <p>
-            Glyph will not infer a default. Keep the blocker, record a reasoned desk decision, or
-            mark the item not applicable.
+            Glyph will not infer a default. Keep the blocker or record a reasoned desk decision.
+            Optional items alone may be marked not applicable.
           </p>
           <label>
             Decision value
@@ -229,13 +266,24 @@ export function ContractInspector({
             <button type="button" onClick={saveDecision} aria-label="Save human decision">
               Save decision
             </button>
-            <button
-              type="button"
-              onClick={markNotApplicable}
-              aria-label="Mark item not applicable"
-            >
-              Not applicable
-            </button>
+            {canMarkNotApplicable ? (
+              <button
+                type="button"
+                onClick={markNotApplicable}
+                aria-label="Mark item not applicable"
+              >
+                Not applicable
+              </button>
+            ) : null}
+            {canRecordGrossReplication ? (
+              <button
+                type="button"
+                onClick={recordGrossReplication}
+                aria-label="Record gross replication"
+              >
+                Gross replication
+              </button>
+            ) : null}
           </div>
           <button
             type="button"
@@ -246,7 +294,53 @@ export function ContractInspector({
             <BookOpenText aria-hidden="true" size={16} /> Open Reader to investigate
           </button>
         </fieldset>
-      ) : null}
+      ) : (
+        <fieldset
+          className="contract-decision-form"
+          disabled={pending}
+          aria-describedby={describedBy}
+        >
+          <legend>Review supported implementation value</legend>
+          <p>Confirm the source-backed value, question it, or save a reasoned correction.</p>
+          <label>
+            Corrected value
+            <input
+              value={decisionValue}
+              onChange={(event) => setDecisionValue(event.currentTarget.value)}
+              aria-invalid={validation?.startsWith('Enter the corrected') || undefined}
+            />
+          </label>
+          <label>
+            Review reason
+            <textarea
+              value={decisionReason}
+              onChange={(event) => setDecisionReason(event.currentTarget.value)}
+              aria-invalid={validation?.startsWith('Explain') || undefined}
+              aria-describedby={validation ? validationId : undefined}
+            />
+          </label>
+          {validation ? (
+            <p id={validationId} className="contract-form-error" role="alert">
+              {validation}
+            </p>
+          ) : null}
+          <div className="contract-decision-actions">
+            <button type="button" onClick={confirmSupported} aria-label="Confirm supported item">
+              Confirm
+            </button>
+            <button type="button" onClick={questionSupported} aria-label="Question supported item">
+              Question
+            </button>
+            <button
+              type="button"
+              onClick={saveCorrection}
+              aria-label="Save supported-item correction"
+            >
+              Save correction
+            </button>
+          </div>
+        </fieldset>
+      )}
     </aside>
   )
 }

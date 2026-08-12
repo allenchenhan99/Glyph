@@ -335,8 +335,8 @@ def test_missing_transaction_cost_is_blocking_until_gross_replication_decision()
         origin="missing",
         rationale="The paper does not report costs.",
         resolution=ContractResolutionDraft(
-            status="not_applicable",
-            value=None,
+            status="decided",
+            value=ScalarValue(kind="scalar", value="gross_replication"),
             reason="Reproduce gross returns without a cost adjustment.",
         ),
     )
@@ -347,6 +347,26 @@ def test_missing_transaction_cost_is_blocking_until_gross_replication_decision()
     assert blocked.readiness == "blocked"
     assert resolved.readiness == "implementation_ready"
     assert "missing_blocker" not in {issue.code for issue in resolved.issues}
+
+
+def test_arbitrary_not_applicable_reason_cannot_stand_in_for_gross_replication():
+    module = audit_module()
+    unresolved = item(
+        "transaction_cost",
+        value=None,
+        origin="missing",
+        rationale="The paper does not report costs.",
+        resolution=ContractResolutionDraft(
+            status="not_applicable",
+            value=None,
+            reason="Anything at all.",
+        ),
+    )
+
+    audit = module.audit_contract((unresolved,))
+
+    assert audit.readiness == "blocked"
+    assert "missing_blocker" in {issue.code for issue in audit.issues}
 
 
 @pytest.mark.parametrize(

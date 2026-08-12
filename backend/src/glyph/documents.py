@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -241,7 +241,11 @@ def section_to_out(
     )
 
 
-def load_reader_parts(session: Session, document_id: str):
+def load_reader_parts(
+    session: Session,
+    document_id: str,
+    source_content_hash: str | None = None,
+):
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -251,11 +255,12 @@ def load_reader_parts(session: Session, document_id: str):
         .order_by(Section.order_index)
     ).all()
     section_by_id = {section.id: section for section in sections}
+    snapshot_hash = source_content_hash or document.processed_content_hash
     blocks = session.scalars(
         select(Block)
         .where(
             Block.document_id == document_id,
-            Block.source_content_hash == document.processed_content_hash,
+            Block.source_content_hash == snapshot_hash,
         )
         .order_by(Block.order_index)
     ).all()
@@ -353,9 +358,13 @@ def get_job_route(
 def get_reader(
     document_id: str,
     session: Annotated[Session, Depends(get_session)],
+    source_content_hash: Annotated[
+        str | None,
+        Query(pattern="^[0-9a-f]{64}$"),
+    ] = None,
 ) -> ReaderOut:
     document, sections, section_by_id, blocks, summary = load_reader_parts(
-        session, document_id
+        session, document_id, source_content_hash
     )
     section_block_counts = {
         section.id: sum(1 for block in blocks if block.section_id == section.id)

@@ -111,9 +111,10 @@ def get_active_contract(
 def get_contract_versions(
     document_id: str,
     session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
 ):
     try:
-        return list_implementation_contract_versions(session, document_id)
+        return list_implementation_contract_versions(session, document_id, limit=limit)
     except ImplementationContractNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

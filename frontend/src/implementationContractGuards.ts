@@ -87,6 +87,7 @@ const jobStatuses: readonly ImplementationContractJobStatus[] = [
 ]
 const diffClassifications: readonly ContractDiffClassification[] = [
   'unchanged',
+  'type_changed',
   'value_changed',
   'origin_changed',
   'evidence_changed',
