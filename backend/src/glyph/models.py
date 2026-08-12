@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -22,15 +22,31 @@ class Document(Base):
     source_path: Mapped[str] = mapped_column(String(2048), nullable=False, unique=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     file_type: Mapped[str] = mapped_column(String(16), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="discovered")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="discovered"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
-    jobs: Mapped[list[ProcessingJob]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    pages: Mapped[list[Page]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    blocks: Mapped[list[Block]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    sections: Mapped[list[Section]] = relationship(back_populates="document", cascade="all, delete-orphan")
-    summaries: Mapped[list[Summary]] = relationship(back_populates="document", cascade="all, delete-orphan")
+    jobs: Mapped[list[ProcessingJob]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    pages: Mapped[list[Page]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    blocks: Mapped[list[Block]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    sections: Mapped[list[Section]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    summaries: Mapped[list[Summary]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
 
 
 class ProcessingJob(Base):
@@ -42,8 +58,12 @@ class ProcessingJob(Base):
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
     document: Mapped[Document] = relationship(back_populates="jobs")
 
@@ -71,7 +91,9 @@ class Section(Base):
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("sections.id"))
     summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
-    document: Mapped[Document] = relationship(back_populates="sections", foreign_keys=[document_id])
+    document: Mapped[Document] = relationship(
+        back_populates="sections", foreign_keys=[document_id]
+    )
 
 
 class Block(Base):
@@ -98,6 +120,8 @@ class Summary(Base):
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False)
     section_id: Mapped[str | None] = mapped_column(ForeignKey("sections.id"))
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
 
     document: Mapped[Document] = relationship(back_populates="summaries")

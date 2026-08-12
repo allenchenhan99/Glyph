@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
-
-import shutil
-import subprocess
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -53,8 +52,12 @@ def compute_hash(path: Path) -> str:
     return digest.hexdigest()
 
 
-def register_document(session: Session, source_path: Path, status: str | None = None) -> Document:
-    existing = session.scalar(select(Document).where(Document.source_path == str(source_path)))
+def register_document(
+    session: Session, source_path: Path, status: str | None = None
+) -> Document:
+    existing = session.scalar(
+        select(Document).where(Document.source_path == str(source_path))
+    )
     content_hash = compute_hash(source_path)
     if existing is not None:
         existing.content_hash = content_hash
@@ -107,8 +110,12 @@ def job_to_out(job) -> JobOut:
     )
 
 
-def section_to_out(section: Section, total_blocks: int, section_block_count: int) -> SectionOut:
-    progress = 0 if total_blocks == 0 else round((section_block_count / total_blocks) * 100, 2)
+def section_to_out(
+    section: Section, total_blocks: int, section_block_count: int
+) -> SectionOut:
+    progress = (
+        0 if total_blocks == 0 else round((section_block_count / total_blocks) * 100, 2)
+    )
     return SectionOut(
         id=section.id,
         title=section.title,
@@ -124,11 +131,15 @@ def load_reader_parts(session: Session, document_id: str):
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     sections = session.scalars(
-        select(Section).where(Section.document_id == document_id).order_by(Section.order_index)
+        select(Section)
+        .where(Section.document_id == document_id)
+        .order_by(Section.order_index)
     ).all()
     section_by_id = {section.id: section for section in sections}
     blocks = session.scalars(
-        select(Block).where(Block.document_id == document_id).order_by(Block.order_index)
+        select(Block)
+        .where(Block.document_id == document_id)
+        .order_by(Block.order_index)
     ).all()
     summary = session.scalar(
         select(Summary)
@@ -199,9 +210,12 @@ def get_reader(
     document_id: str,
     session: Annotated[Session, Depends(get_session)],
 ) -> ReaderOut:
-    document, sections, section_by_id, blocks, summary = load_reader_parts(session, document_id)
+    document, sections, section_by_id, blocks, summary = load_reader_parts(
+        session, document_id
+    )
     section_block_counts = {
-        section.id: sum(1 for block in blocks if block.section_id == section.id) for section in sections
+        section.id: sum(1 for block in blocks if block.section_id == section.id)
+        for section in sections
     }
     return ReaderOut(
         document=document_to_out(document),
@@ -215,13 +229,17 @@ def get_reader(
                 translated_text=block.translated_text,
                 formula_latex=block.formula_latex,
                 page_image_url=f"/api/documents/{document.id}/pages/{block.page_number}/image",
-                section_path=section_by_id[block.section_id].path if block.section_id in section_by_id else None,
+                section_path=section_by_id[block.section_id].path
+                if block.section_id in section_by_id
+                else None,
                 confidence=block.confidence,
             )
             for block in blocks
         ],
         sections=[
-            section_to_out(section, len(blocks), section_block_counts.get(section.id, 0))
+            section_to_out(
+                section, len(blocks), section_block_counts.get(section.id, 0)
+            )
             for section in sections
         ],
         summary=summary.summary_text if summary is not None else "",
@@ -235,7 +253,8 @@ def get_sections(
 ) -> list[SectionOut]:
     _, sections, _, blocks, _ = load_reader_parts(session, document_id)
     section_block_counts = {
-        section.id: sum(1 for block in blocks if block.section_id == section.id) for section in sections
+        section.id: sum(1 for block in blocks if block.section_id == section.id)
+        for section in sections
     }
     return [
         section_to_out(section, len(blocks), section_block_counts.get(section.id, 0))
@@ -268,7 +287,9 @@ def get_page_image(
     if document.file_type != "pdf":
         raise HTTPException(status_code=404, detail="Page image unavailable")
     if shutil.which("pdftoppm") is None:
-        raise HTTPException(status_code=503, detail="pdftoppm is required for page images")
+        raise HTTPException(
+            status_code=503, detail="pdftoppm is required for page images"
+        )
 
     page_dir = settings.data_dir / "page-images" / document.id
     page_dir.mkdir(parents=True, exist_ok=True)

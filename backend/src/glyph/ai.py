@@ -34,19 +34,25 @@ class ParsedDocument:
 
 
 class MockAiAdapter:
-    def parse_translate_and_summarize(self, page_text: list[tuple[int, str]]) -> ParsedDocument:
+    def parse_translate_and_summarize(
+        self, page_text: list[tuple[int, str]]
+    ) -> ParsedDocument:
         blocks: list[ParsedBlock] = []
         sections: list[ParsedSection] = []
         current_section = "Document"
 
         for page_number, text in page_text:
-            for part in [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]:
+            for part in [
+                part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()
+            ]:
                 for unit in split_reading_units(part):
                     block_type = classify_block(unit)
                     source_text = normalize_source_text(unit, block_type)
                     if block_type == "heading":
                         current_section = source_text
-                        if not any(section.title == current_section for section in sections):
+                        if not any(
+                            section.title == current_section for section in sections
+                        ):
                             sections.append(
                                 ParsedSection(
                                     order_index=len(sections),
@@ -61,7 +67,9 @@ class MockAiAdapter:
                             page_number=page_number,
                             block_type=block_type,
                             source_text=source_text,
-                            translated_text=translate_to_traditional_chinese(source_text, block_type),
+                            translated_text=translate_to_traditional_chinese(
+                                source_text, block_type
+                            ),
                             section_title=current_section,
                         )
                     )
@@ -114,9 +122,9 @@ def classify_block(text: str) -> str:
     stripped = text.strip()
     if looks_like_heading(stripped):
         return "heading"
-    if re.match(r"^(fig\.?|figure)\s+\d", stripped, re.I):
+    if re.match(r"^(fig\.?|figure)\s+\d", stripped, re.IGNORECASE):
         return "figure"
-    if re.match(r"^table\s+\d", stripped, re.I):
+    if re.match(r"^table\s+\d", stripped, re.IGNORECASE):
         return "table"
     if looks_like_formula(stripped):
         return "formula"
@@ -153,7 +161,20 @@ def translate_to_traditional_chinese(text: str, block_type: str) -> str:
 def looks_like_formula(text: str) -> bool:
     if not text or len(text) > 600:
         return False
-    formula_markers = ("=", "∑", "√", "≤", "≥", "≠", "σ", "μ", "^", "_", "\\frac", "\\sum")
+    formula_markers = (
+        "=",
+        "∑",
+        "√",
+        "≤",
+        "≥",
+        "≠",
+        "σ",
+        "μ",
+        "^",
+        "_",
+        "\\frac",
+        "\\sum",
+    )
     if not any(marker in text for marker in formula_markers):
         return False
     words = re.findall(r"[A-Za-z]{3,}", text)
@@ -164,13 +185,11 @@ def looks_like_formula(text: str) -> bool:
 def looks_like_heading(text: str) -> bool:
     if text.startswith("#"):
         return True
-    if not re.match(r"^(chapter|section)\b", text, re.I):
+    if not re.match(r"^(chapter|section)\b", text, re.IGNORECASE):
         return False
     if len(text) > 160 or text.count("\n") > 1:
         return False
-    if "....." in text:
-        return False
-    return True
+    return "....." not in text
 
 
 def create_ai_adapter(settings: Settings):

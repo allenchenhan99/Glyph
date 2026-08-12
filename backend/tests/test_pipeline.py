@@ -31,7 +31,9 @@ def test_formula_latex_is_preserved_when_building_persistent_block():
     assert block.formula_latex == r"\mathbb{E}[R] = r_f + \beta(r_m-r_f)"
 
 
-def test_process_document_creates_blocks_translations_sections_and_summary(tmp_path, monkeypatch):
+def test_process_document_creates_blocks_translations_sections_and_summary(
+    tmp_path, monkeypatch
+):
     book = tmp_path / "book"
     book.mkdir()
     (book / "sample.pdf").write_text(
@@ -62,12 +64,23 @@ def test_process_document_creates_blocks_translations_sections_and_summary(tmp_p
 
     with app.state.session_factory() as session:
         blocks = session.scalars(
-            select(Block).where(Block.document_id == document_id).order_by(Block.order_index)
+            select(Block)
+            .where(Block.document_id == document_id)
+            .order_by(Block.order_index)
         ).all()
-        sections = session.scalars(select(Section).where(Section.document_id == document_id)).all()
-        summaries = session.scalars(select(Summary).where(Summary.document_id == document_id)).all()
+        sections = session.scalars(
+            select(Section).where(Section.document_id == document_id)
+        ).all()
+        summaries = session.scalars(
+            select(Summary).where(Summary.document_id == document_id)
+        ).all()
 
-    assert [block.block_type for block in blocks] == ["heading", "paragraph", "question", "paragraph"]
+    assert [block.block_type for block in blocks] == [
+        "heading",
+        "paragraph",
+        "question",
+        "paragraph",
+    ]
     assert blocks[1].translated_text.startswith("繁中翻譯：")
     assert sections[0].title == "Introduction"
     assert "Introduction" in summaries[0].summary_text
@@ -90,7 +103,9 @@ def test_failed_reprocessing_keeps_previous_reader_content(tmp_path, monkeypatch
         def parse_translate_and_summarize(self, page_text):
             raise RuntimeError("CLI unavailable")
 
-    monkeypatch.setattr("glyph.pipeline.create_ai_adapter", lambda settings: FailingAdapter())
+    monkeypatch.setattr(
+        "glyph.pipeline.create_ai_adapter", lambda settings: FailingAdapter()
+    )
     failed_job = client.post(f"/api/documents/{document_id}/process").json()
     reader = client.get(f"/api/documents/{document_id}/reader").json()
 

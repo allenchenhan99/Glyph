@@ -3,7 +3,9 @@ from fastapi.testclient import TestClient
 from glyph.main import create_app
 
 
-def test_reader_payload_returns_aligned_blocks_sections_and_summary(tmp_path, monkeypatch):
+def test_reader_payload_returns_aligned_blocks_sections_and_summary(
+    tmp_path, monkeypatch
+):
     book = tmp_path / "book"
     book.mkdir()
     (book / "reader.pdf").write_text(
@@ -30,7 +32,10 @@ def test_reader_payload_returns_aligned_blocks_sections_and_summary(tmp_path, mo
     assert reader["blocks"][0]["translated_text"] == "標題：Chapter One"
     assert reader["blocks"][0]["formula_latex"] is None
     assert reader["blocks"][0]["section_path"] == "Chapter One"
-    assert reader["blocks"][0]["page_image_url"] == f"/api/documents/{document_id}/pages/1/image"
+    assert (
+        reader["blocks"][0]["page_image_url"]
+        == f"/api/documents/{document_id}/pages/1/image"
+    )
     assert reader["blocks"][0]["page_number"] == 1
     assert reader["blocks"][0]["block_type"] == "heading"
     assert sections_response.json()[0]["title"] == "Chapter One"

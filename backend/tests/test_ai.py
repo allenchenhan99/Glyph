@@ -15,10 +15,19 @@ def test_formula_normalization_preserves_line_breaks_and_spacing():
 
 def test_mock_ai_keeps_formula_as_readable_block():
     parsed = MockAiAdapter().parse_translate_and_summarize(
-        [(3, "# CAPM\n\nE[R] = rf + beta * (rm - rf)\nVar(R) = sigma^2\n\nFigure 1.1 Payoff diagram")]
+        [
+            (
+                3,
+                "# CAPM\n\nE[R] = rf + beta * (rm - rf)\nVar(R) = sigma^2\n\nFigure 1.1 Payoff diagram",
+            )
+        ]
     )
 
-    assert [block.block_type for block in parsed.blocks] == ["heading", "formula", "figure"]
+    assert [block.block_type for block in parsed.blocks] == [
+        "heading",
+        "formula",
+        "figure",
+    ]
     assert parsed.blocks[1].page_number == 3
     assert "\n" in parsed.blocks[1].source_text
 

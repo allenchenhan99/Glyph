@@ -122,7 +122,9 @@ def test_cli_adapter_runs_bounded_batches_concurrently_and_preserves_order():
         runner=runner,
     )
 
-    parsed = adapter.parse_translate_and_summarize([(1, "First paragraph.\n\nSecond paragraph.")])
+    parsed = adapter.parse_translate_and_summarize(
+        [(1, "First paragraph.\n\nSecond paragraph.")]
+    )
 
     assert [block.translated_text for block in parsed.blocks] == ["譯文 0", "譯文 1"]
 
@@ -154,11 +156,19 @@ def test_cli_adapter_reuses_completed_batch_cache(tmp_path):
         runner=runner,
     )
 
-    first = adapter.parse_translate_and_summarize([(1, "Expected return is uncertain.")])
-    second = adapter.parse_translate_and_summarize([(1, "Expected return is uncertain.")])
+    first = adapter.parse_translate_and_summarize(
+        [(1, "Expected return is uncertain.")]
+    )
+    second = adapter.parse_translate_and_summarize(
+        [(1, "Expected return is uncertain.")]
+    )
 
     assert calls == 1
-    assert first.blocks[0].translated_text == second.blocks[0].translated_text == "已快取的譯文"
+    assert (
+        first.blocks[0].translated_text
+        == second.blocks[0].translated_text
+        == "已快取的譯文"
+    )
 
 
 def test_cli_adapter_retries_invalid_batch_before_caching(tmp_path):
@@ -191,12 +201,20 @@ def test_cli_adapter_retries_invalid_batch_before_caching(tmp_path):
         runner=runner,
     )
 
-    first = adapter.parse_translate_and_summarize([(1, "Expected return is uncertain.")])
-    second = adapter.parse_translate_and_summarize([(1, "Expected return is uncertain.")])
+    first = adapter.parse_translate_and_summarize(
+        [(1, "Expected return is uncertain.")]
+    )
+    second = adapter.parse_translate_and_summarize(
+        [(1, "Expected return is uncertain.")]
+    )
 
     assert calls == 2
     assert "previous response was rejected" in prompts[1]["correction"]
-    assert first.blocks[0].translated_text == second.blocks[0].translated_text == "有效譯文"
+    assert (
+        first.blocks[0].translated_text
+        == second.blocks[0].translated_text
+        == "有效譯文"
+    )
 
 
 def test_cli_adapter_retries_transient_cli_failure():
@@ -216,7 +234,9 @@ def test_cli_adapter_retries_transient_cli_failure():
 
     adapter = CliAiAdapter("claude", None, 1, 90, concurrency=1, runner=runner)
 
-    parsed = adapter.parse_translate_and_summarize([(1, "Expected return is uncertain.")])
+    parsed = adapter.parse_translate_and_summarize(
+        [(1, "Expected return is uncertain.")]
+    )
 
     assert calls == 2
     assert parsed.blocks[0].translated_text == "重試成功"

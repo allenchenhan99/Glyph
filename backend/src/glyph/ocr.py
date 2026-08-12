@@ -49,7 +49,9 @@ class UnlimitedOcrAdapter:
         self.settings = settings
 
     def extract_pages(self, source_path: Path) -> list[OcrPage]:
-        output_dir = self.settings.data_dir / "ocr" / f"{source_path.stem}-{uuid4().hex}"
+        output_dir = (
+            self.settings.data_dir / "ocr" / f"{source_path.stem}-{uuid4().hex}"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         if self.settings.unlimited_ocr_command:
             self._run_configured_command(source_path, output_dir)
@@ -155,9 +157,13 @@ def run_command(command: list[str], cwd: Path | None) -> None:
 
 
 def read_markdown_output(output_dir: Path) -> str:
-    markdown_files = sorted(output_dir.rglob("*.md"), key=lambda path: path.stat().st_mtime)
+    markdown_files = sorted(
+        output_dir.rglob("*.md"), key=lambda path: path.stat().st_mtime
+    )
     if not markdown_files:
-        raise OcrUnavailableError(f"Unlimited-OCR produced no markdown output in {output_dir}")
+        raise OcrUnavailableError(
+            f"Unlimited-OCR produced no markdown output in {output_dir}"
+        )
     texts = [path.read_text(encoding="utf-8").strip() for path in markdown_files]
     text = "\n\n".join(part for part in texts if part)
     if not text:

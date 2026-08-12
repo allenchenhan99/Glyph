@@ -20,7 +20,10 @@ def test_mock_ocr_extracts_text_backed_pdf_with_pdftotext(tmp_path, monkeypatch)
 
     pages = MockOcrAdapter().extract_pages(source)
 
-    assert pages[0].text == "# Real PDF Title\n\nThis is embedded PDF text, not fallback text."
+    assert (
+        pages[0].text
+        == "# Real PDF Title\n\nThis is embedded PDF text, not fallback text."
+    )
 
 
 def test_mock_ocr_splits_text_backed_pdf_by_form_feed_pages(tmp_path, monkeypatch):

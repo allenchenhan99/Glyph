@@ -34,7 +34,9 @@ def get_settings() -> Settings:
         database_url=database_url,
         ocr_mode=os.environ.get("GLYPH_OCR_MODE", "mock"),
         ai_mode=os.environ.get("GLYPH_AI_MODE", "claude_cli"),
-        unlimited_ocr_repo=Path(repo) if (repo := os.environ.get("GLYPH_UNLIMITED_OCR_REPO")) else None,
+        unlimited_ocr_repo=Path(repo)
+        if (repo := os.environ.get("GLYPH_UNLIMITED_OCR_REPO"))
+        else None,
         unlimited_ocr_command=os.environ.get("GLYPH_UNLIMITED_OCR_COMMAND"),
         cli_model=os.environ.get("GLYPH_CLI_MODEL"),
         cli_batch_size=int(os.environ.get("GLYPH_CLI_BATCH_SIZE", "24")),

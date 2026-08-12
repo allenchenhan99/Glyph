@@ -12,7 +12,9 @@ from glyph.models import Block, Document, Page, ProcessingJob, Section, Summary
 from glyph.ocr import create_ocr_adapter
 
 
-def process_document(session: Session, settings: Settings, document: Document) -> ProcessingJob:
+def process_document(
+    session: Session, settings: Settings, document: Document
+) -> ProcessingJob:
     job = ProcessingJob(
         id=str(uuid4()),
         document_id=document.id,
@@ -26,7 +28,9 @@ def process_document(session: Session, settings: Settings, document: Document) -
     session.flush()
 
     try:
-        ocr_pages = create_ocr_adapter(settings).extract_pages(Path(document.source_path))
+        ocr_pages = create_ocr_adapter(settings).extract_pages(
+            Path(document.source_path)
+        )
         job.stage = "ai_parse"
         job.progress = 45
         parsed = create_ai_adapter(settings).parse_translate_and_summarize(
@@ -62,7 +66,7 @@ def process_document(session: Session, settings: Settings, document: Document) -
         job.stage = "completed"
         job.progress = 100
         document.status = "completed"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - adapters may raise provider errors
         job.status = "failed"
         job.stage = "failed"
         job.progress = 100
@@ -77,7 +81,9 @@ def clear_document_outputs(session: Session, document_id: str) -> None:
         session.execute(delete(model).where(model.document_id == document_id))
 
 
-def persist_sections(session: Session, document_id: str, parsed_sections) -> dict[str, Section]:
+def persist_sections(
+    session: Session, document_id: str, parsed_sections
+) -> dict[str, Section]:
     section_by_title: dict[str, Section] = {}
     for parsed_section in parsed_sections:
         section = Section(
@@ -108,7 +114,9 @@ def block_from_parsed(
     parsed_block: ParsedBlock,
     section_by_title: dict[str, Section],
 ) -> Block:
-    section = section_by_title.get(parsed_block.section_title) or next(iter(section_by_title.values()))
+    section = section_by_title.get(parsed_block.section_title) or next(
+        iter(section_by_title.values())
+    )
     return Block(
         id=str(uuid4()),
         document_id=document_id,

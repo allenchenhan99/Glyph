@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import subprocess
 import tempfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
 
 from glyph.ai import MockAiAdapter, ParsedDocument
 
@@ -65,7 +65,9 @@ class CliAiAdapter:
         self.cache_dir = cache_dir
         self.runner = runner or run_cli
 
-    def parse_translate_and_summarize(self, page_text: list[tuple[int, str]]) -> ParsedDocument:
+    def parse_translate_and_summarize(
+        self, page_text: list[tuple[int, str]]
+    ) -> ParsedDocument:
         source_document = MockAiAdapter().parse_translate_and_summarize(page_text)
         schema_json = json.dumps(TRANSLATION_SCHEMA, ensure_ascii=True)
         batches = [
@@ -95,7 +97,9 @@ class CliAiAdapter:
 
         return replace(source_document, blocks=translated_blocks)
 
-    def load_or_run_batch(self, command: list[str], prompt: str, batch) -> dict[str, dict]:
+    def load_or_run_batch(
+        self, command: list[str], prompt: str, batch
+    ) -> dict[str, dict]:
         cache_path = None
         if self.cache_dir is not None:
             cache_path = self.batch_cache_path(prompt)
@@ -127,15 +131,21 @@ class CliAiAdapter:
         raise last_error or CliAiError("CLI returned an invalid translation batch")
 
     def batch_cache_path(self, prompt: str) -> Path:
+        if self.cache_dir is None:
+            raise CliAiError("CLI cache directory is not configured")
         cache_key = hashlib.sha256(
-            f"{self.provider}\0{self.model or ''}\0{prompt}".encode("utf-8")
+            f"{self.provider}\0{self.model or ''}\0{prompt}".encode()
         ).hexdigest()
         return self.cache_dir / f"{cache_key}.json"
 
     def store_batch_cache(self, cache_path: Path, response: dict) -> None:
+        if self.cache_dir is None:
+            raise CliAiError("CLI cache directory is not configured")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         temporary_path = cache_path.with_suffix(".tmp")
-        temporary_path.write_text(json.dumps(response, ensure_ascii=False), encoding="utf-8")
+        temporary_path.write_text(
+            json.dumps(response, ensure_ascii=False), encoding="utf-8"
+        )
         temporary_path.replace(cache_path)
 
 
@@ -210,7 +220,9 @@ def run_cli(command: list[str], prompt: str, timeout_seconds: int) -> dict:
     except FileNotFoundError as exc:
         raise CliAiError(f"{executable} CLI is not installed") from exc
     except subprocess.TimeoutExpired as exc:
-        raise CliAiError(f"{executable} CLI timed out after {timeout_seconds} seconds") from exc
+        raise CliAiError(
+            f"{executable} CLI timed out after {timeout_seconds} seconds"
+        ) from exc
     if completed.returncode != 0:
         raise CliAiError(f"{executable} CLI failed: {completed.stderr.strip()}")
     try:
@@ -222,7 +234,9 @@ def run_cli(command: list[str], prompt: str, timeout_seconds: int) -> dict:
             raise ValueError("structured_output is missing")
         return structured
     except (json.JSONDecodeError, ValueError, TypeError) as exc:
-        raise CliAiError(f"{executable} CLI returned invalid structured output") from exc
+        raise CliAiError(
+            f"{executable} CLI returned invalid structured output"
+        ) from exc
 
 
 def run_codex(command: list[str], prompt: str, timeout_seconds: int) -> dict:
@@ -250,7 +264,9 @@ def run_codex(command: list[str], prompt: str, timeout_seconds: int) -> dict:
     except FileNotFoundError as exc:
         raise CliAiError("codex CLI is not installed") from exc
     except subprocess.TimeoutExpired as exc:
-        raise CliAiError(f"codex CLI timed out after {timeout_seconds} seconds") from exc
+        raise CliAiError(
+            f"codex CLI timed out after {timeout_seconds} seconds"
+        ) from exc
     except (json.JSONDecodeError, OSError) as exc:
         raise CliAiError("codex CLI returned invalid structured output") from exc
 
@@ -270,13 +286,19 @@ def validate_batch_response(response: dict, blocks) -> dict[str, dict]:
         translated_text = item.get("translated_text")
         formula_latex = item.get("formula_latex")
         if not isinstance(translated_text, str) or not translated_text.strip():
-            raise CliAiError(f"CLI returned an empty translation for block {block.order_index}")
+            raise CliAiError(
+                f"CLI returned an empty translation for block {block.order_index}"
+            )
         if block.block_type == "formula" and (
             not isinstance(formula_latex, str) or not formula_latex.strip()
         ):
-            raise CliAiError(f"CLI returned no LaTeX for formula block {block.order_index}")
+            raise CliAiError(
+                f"CLI returned no LaTeX for formula block {block.order_index}"
+            )
         if block.block_type != "formula" and formula_latex is not None:
-            raise CliAiError(f"CLI returned LaTeX for non-formula block {block.order_index}")
+            raise CliAiError(
+                f"CLI returned LaTeX for non-formula block {block.order_index}"
+            )
     return by_id
 
 
@@ -284,9 +306,12 @@ def normalize_formula_latex(value: str | None) -> str | None:
     if value is None:
         return None
     latex = value.strip()
-    if latex.startswith(r"\[") and latex.endswith(r"\]"):
-        latex = latex[2:-2].strip()
-    elif latex.startswith("$$") and latex.endswith("$$"):
+    if (
+        latex.startswith(r"\[")
+        and latex.endswith(r"\]")
+        or latex.startswith("$$")
+        and latex.endswith("$$")
+    ):
         latex = latex[2:-2].strip()
     return latex or None
 
