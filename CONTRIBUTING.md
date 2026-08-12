@@ -25,6 +25,12 @@ For deterministic local development, set `GLYPH_AI_MODE=mock`. Start the app wit
 - `backend/src/glyph/research_maps.py` owns immutable versions, atomic activation, review overlays, and deterministic diffs.
 - `backend/src/glyph/research_jobs.py` is a single-process local executor boundary, not a distributed queue.
 - `frontend/src/researchMapState.ts` is the Map/Reader/review state machine; do not replace it with scattered component booleans.
+- `backend/src/glyph/contract_domain.py` is the canonical Implementation Contract vocabulary and typed-value boundary. Provider-only sections, item types, origins, or readiness values are not allowed.
+- `backend/src/glyph/contract_evidence.py` validates contract anchors and optional Map links against trusted Reader and Research Map identity.
+- `backend/src/glyph/contract_audit.py` alone derives generation status and readiness. Providers and frontend components must never compute or override readiness.
+- `backend/src/glyph/implementation_contracts.py` owns immutable contract versions, append-only resolution overlays, exact-signature carry-forward, activation, and diffs.
+- `backend/src/glyph/contract_jobs.py` is a process-local, single-worker persistent executor and preserves the prior active contract after failure.
+- `frontend/src/implementationContractState.ts` owns Contract/Reader/decision state. Navigation must store stable IDs and clear document-specific state when switching documents.
 
 Runtime documents and generated data belong in ignored `book/` and `data/` paths. Never add real user documents, databases, credentials, AI cache entries, or generated page images to a commit.
 
@@ -41,7 +47,15 @@ For Research Map changes, also run the deterministic benchmark and verify that e
 .venv/bin/pytest backend/tests/test_research_benchmark.py -q
 ```
 
+For Implementation Contract vocabulary, typed values, evidence, audit, provider, version, resolution, or export changes, run the contract gold benchmark:
+
+```bash
+.venv/bin/pytest backend/tests/test_contract_benchmark.py -q
+```
+
 New ontology values require a design update, domain/runtime-schema tests, API guard tests, and a migration review when persisted meaning changes. Never silently reinterpret an existing value. Human review must stay append-only and AI drafts immutable.
+
+New Contract sections, item types, origins, resolution statuses, readiness rules, issue codes, or diff classifications require coordinated domain and Pydantic tests, frontend runtime-guard and presentation tests, benchmark-gold review, and documentation updates. Provider output cannot set readiness. Update a gold fixture only when the intended semantic change is explained in the pull request; review evidence hashes, expected origins, blockers, readiness, and deterministic exports rather than regenerating snapshots blindly. Unsupported silent defaults and false `implementation_ready` results are release blockers.
 
 Backend gates, run from the repository root:
 

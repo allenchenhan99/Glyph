@@ -23,6 +23,10 @@ Glyph is currently pre-1.0. It is designed for a trusted single user on one mach
 - Complete a bounded five-step review with verbatim English and aligned Traditional Chinese evidence.
 - Confirm, question, or correct claims without overwriting the AI draft.
 - Deep-link Map evidence into Reader blocks and preserve context on return.
+- Build typed, immutable Implementation Contracts from an explicit Research Map version.
+- Keep author-stated, derived, human-decided, and missing implementation values visibly distinct.
+- Audit blockers and readiness outside the AI provider, with append-only decisions and exact evidence.
+- Compare contract versions and export deterministic JSON or Markdown without executing generated content.
 
 Section summaries currently use deterministic placeholder text. Full AI-generated document and section summaries remain a future milestone.
 
@@ -77,7 +81,7 @@ Start both services:
 ./scripts/dev.sh
 ```
 
-Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Research Map**. Generate the map, follow the five-step review, and open exact evidence in the full Reader. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
+Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Research Map**. Generate the map, follow the five-step review, and open exact evidence in the full Reader. From a current Map, select **Build Implementation Contract** for the six-step implementation review and a typed export. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
 
 Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
 
@@ -130,6 +134,7 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | `GLYPH_PAGE_RENDER_TIMEOUT_SECONDS` | `30` | Timeout for rendering one PDF page |
 | `GLYPH_RESEARCH_JOB_MAX_ATTEMPTS` | `2` | Interrupted map-job attempts before safe failure |
 | `GLYPH_RESEARCH_CLI_BLOCK_BATCH_SIZE` | `12` | Reader blocks per Research Map extraction request |
+| `GLYPH_CONTRACT_CLI_BLOCK_BATCH_SIZE` | `8` | Reader blocks per Implementation Contract extraction request |
 | `GLYPH_BOOK_DIR` | `book/` | Optional source-document directory override |
 | `GLYPH_DATA_DIR` | `data/` | Optional runtime-data directory override |
 | `GLYPH_DATABASE_URL` | local SQLite | Optional SQLAlchemy database URL |
@@ -167,7 +172,7 @@ npm run build
 
 The backend API runs on `http://127.0.0.1:8000`; Vite proxies `/api` requests from `http://127.0.0.1:5173`.
 
-Database changes are managed by Alembic and applied automatically at backend startup. The migration bootstrap recognizes the original public schema and preserves its data; it rejects unknown partial schemas instead of resetting them. Back up `data/` and `book/` before upgrading. See the [Research Map guide](docs/research-map.md) for evidence guarantees, version/review semantics, recovery, and trust boundaries, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull-request expectations.
+Database changes are managed by Alembic and applied automatically at backend startup. The migration bootstrap recognizes the original public schema and preserves its data; it rejects unknown partial schemas instead of resetting them. Back up `data/` and `book/` before upgrading. See the [Research Map guide](docs/research-map.md) and [Implementation Contract guide](docs/implementation-contract.md) for evidence guarantees, version/review semantics, recovery, exports, and trust boundaries, and [CONTRIBUTING.md](CONTRIBUTING.md) for pull-request expectations.
 
 ## Project Layout
 
