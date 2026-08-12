@@ -193,6 +193,9 @@ git commit -m "feat: generate audited research map drafts"
 - Create: `backend/src/glyph/research_maps.py`
 - Create: `backend/tests/test_research_maps.py`
 - Modify: `backend/src/glyph/pipeline.py`
+- Modify: `backend/src/glyph/documents.py`
+- Modify: `backend/src/glyph/models.py`
+- Modify: `backend/migrations/versions/0003_research_maps.py`
 
 **Step 1: Write atomic-generation tests**
 
@@ -207,6 +210,8 @@ Also test:
 - node signatures are deterministic;
 - a `partial` map can be active but visibly remains partial;
 - an explicitly failed version cannot activate.
+- reprocessing retains cited historical blocks while the Reader selects only its
+  current source-hash snapshot.
 
 **Step 2: Verify RED**
 

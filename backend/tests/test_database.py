@@ -161,6 +161,9 @@ def test_empty_database_is_created_at_migration_head(tmp_path):
     assert "processed_content_hash" in {
         column["name"] for column in inspector.get_columns("documents")
     }
+    assert "source_content_hash" in {
+        column["name"] for column in inspector.get_columns("blocks")
+    }
 
 
 def test_research_map_migration_declares_expected_foreign_keys(tmp_path):
@@ -297,6 +300,9 @@ def test_research_map_migration_preserves_reader_and_invents_no_map_rows(tmp_pat
         revision = session.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
+        block_source_hash = session.execute(
+            text("SELECT source_content_hash FROM blocks WHERE id = 'block-1'")
+        ).scalar_one()
 
     assert document == (
         "document-1",
@@ -320,6 +326,7 @@ def test_research_map_migration_preserves_reader_and_invents_no_map_rows(tmp_pat
         1.0,
     )
     assert map_row_counts == dict.fromkeys(RESEARCH_MAP_TABLES, 0)
+    assert block_source_hash == "legacy-hash"
     assert revision == "0003_research_maps"
 
 

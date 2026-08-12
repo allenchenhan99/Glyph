@@ -227,7 +227,10 @@ def load_reader_parts(session: Session, document_id: str):
     section_by_id = {section.id: section for section in sections}
     blocks = session.scalars(
         select(Block)
-        .where(Block.document_id == document_id)
+        .where(
+            Block.document_id == document_id,
+            Block.source_content_hash == document.processed_content_hash,
+        )
         .order_by(Block.order_index)
     ).all()
     summary = session.scalar(

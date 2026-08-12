@@ -12,6 +12,16 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    op.add_column(
+        "blocks",
+        sa.Column("source_content_hash", sa.String(length=64), nullable=True),
+    )
+    op.execute(
+        "UPDATE blocks SET source_content_hash = ("
+        "SELECT COALESCE(documents.processed_content_hash, documents.content_hash) "
+        "FROM documents WHERE documents.id = blocks.document_id)"
+    )
+
     op.create_table(
         "research_map_versions",
         sa.Column("id", sa.String(length=36), nullable=False),
@@ -188,3 +198,4 @@ def downgrade() -> None:
         "ix_research_map_versions_document_id", table_name="research_map_versions"
     )
     op.drop_table("research_map_versions")
+    op.drop_column("blocks", "source_content_hash")

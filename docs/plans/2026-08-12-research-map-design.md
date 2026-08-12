@@ -143,6 +143,11 @@ Map versions are immutable after completion except for the active flag. A newly 
 
 Page and document identity are derived from the block. Provider-supplied page numbers are never trusted.
 
+Reader blocks record the processed source hash that created them. Reprocessing removes
+uncited old blocks but retains blocks referenced by immutable map versions; retained
+blocks are excluded from the current Reader query while remaining available to old
+evidence views with their original text, translation, and page number.
+
 ### `research_node_reviews`
 
 - `id`, `node_id`, `revision_number`, optional `supersedes_review_id`

@@ -40,6 +40,7 @@ def build_fixture_session() -> tuple[Session, Document, list[Block]]:
         Block(
             id=f"block-{index}",
             document_id=document.id,
+            source_content_hash=document.processed_content_hash,
             order_index=index,
             page_number=1 + index // 4,
             block_type="paragraph",

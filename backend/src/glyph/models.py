@@ -119,6 +119,7 @@ class Block(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False)
+    source_content_hash: Mapped[str | None] = mapped_column(String(64))
     section_id: Mapped[str | None] = mapped_column(ForeignKey("sections.id"))
     order_index: Mapped[int] = mapped_column(Integer, nullable=False)
     page_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

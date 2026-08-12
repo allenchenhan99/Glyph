@@ -81,6 +81,13 @@ def validate_candidate(
         )
     if block.document_id != document.id:
         raise InvalidEvidenceError("Evidence block belongs to another document")
+    if (
+        document.processed_content_hash is None
+        or block.source_content_hash != document.processed_content_hash
+    ):
+        raise InvalidEvidenceError(
+            "Evidence block does not belong to the current Reader snapshot"
+        )
 
     quote_start, quote_end = _resolve_offsets(block.source_text, candidate)
     actual_quote = block.source_text[quote_start:quote_end]

@@ -85,6 +85,7 @@ def evidence_database() -> Iterator[tuple[Session, Document, Document]]:
             Block(
                 id="block-1",
                 document_id=first_document.id,
+                source_content_hash=first_document.processed_content_hash,
                 order_index=0,
                 page_number=3,
                 block_type="paragraph",
@@ -97,6 +98,7 @@ def evidence_database() -> Iterator[tuple[Session, Document, Document]]:
             Block(
                 id="block-repeated",
                 document_id=first_document.id,
+                source_content_hash=first_document.processed_content_hash,
                 order_index=1,
                 page_number=4,
                 block_type="paragraph",
@@ -106,6 +108,7 @@ def evidence_database() -> Iterator[tuple[Session, Document, Document]]:
             Block(
                 id="block-foreign",
                 document_id=second_document.id,
+                source_content_hash=second_document.processed_content_hash,
                 order_index=0,
                 page_number=1,
                 block_type="paragraph",
@@ -243,6 +246,17 @@ def test_anchor_cannot_cross_document_boundaries(evidence_database):
                 quote_end=16,
             ),
         )
+
+
+def test_anchor_must_belong_to_the_current_reader_snapshot(evidence_database):
+    session, document, _ = evidence_database
+    block = session.get(Block, "block-1")
+    assert block is not None
+    block.source_content_hash = "c" * 64
+    session.commit()
+
+    with pytest.raises(InvalidEvidenceError, match="current Reader snapshot"):
+        validate_candidate(session, document, candidate())
 
 
 def test_missing_block_is_rejected(evidence_database):
