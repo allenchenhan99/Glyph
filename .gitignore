@@ -4,8 +4,11 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+.worktrees/
 node_modules/
 dist/
+coverage/
+.coverage*
 *.tsbuildinfo
 .DS_Store
 

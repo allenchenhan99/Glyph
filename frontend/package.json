@@ -7,6 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "test": "vitest",
+    "test:coverage": "vitest run --coverage",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "@types/katex": "^0.16.8",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^27.3.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"

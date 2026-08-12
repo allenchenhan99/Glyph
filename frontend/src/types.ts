@@ -1,9 +1,17 @@
+export type DocumentStatus =
+  | 'discovered'
+  | 'uploaded'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'stale'
+  | 'missing'
+
 export type DocumentRecord = {
   id: string
   title: string
-  source_path: string
   file_type: string
-  status: string
+  status: DocumentStatus
 }
 
 export type ProcessingJob = {

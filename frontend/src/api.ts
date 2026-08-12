@@ -1,6 +1,16 @@
-import type { DocumentRecord, ProcessingJob, ReaderPayload } from './types'
+import type { DocumentRecord, DocumentStatus, ProcessingJob, ReaderPayload } from './types'
 
 const apiBase = ''
+
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(status: number, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
 
 export async function listDocuments(): Promise<DocumentRecord[]> {
   return fetchJson('/api/documents', isDocumentArray)
@@ -32,13 +42,30 @@ async function fetchJson<T>(
 ): Promise<T> {
   const response = await fetch(`${apiBase}${path}`, init)
   if (!response.ok) {
-    throw new Error(`Request failed with ${response.status}`)
+    throw await responseError(response)
   }
   const payload: unknown = await response.json()
   if (!validate(payload)) {
     throw new Error('Unexpected API response shape')
   }
   return payload
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  const fallback = `Request failed with ${response.status}`
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    return new ApiError(response.status, fallback)
+  }
+
+  try {
+    const payload: unknown = await response.json()
+    if (isRecord(payload) && isString(payload.detail)) {
+      return new ApiError(response.status, payload.detail)
+    }
+  } catch {
+    // A malformed error body is not useful to callers; preserve the HTTP status fallback.
+  }
+  return new ApiError(response.status, fallback)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -57,14 +84,25 @@ function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string'
 }
 
+function isDocumentStatus(value: unknown): value is DocumentStatus {
+  return (
+    value === 'discovered' ||
+    value === 'uploaded' ||
+    value === 'processing' ||
+    value === 'completed' ||
+    value === 'failed' ||
+    value === 'stale' ||
+    value === 'missing'
+  )
+}
+
 function isDocument(value: unknown): value is DocumentRecord {
   return (
     isRecord(value) &&
     isString(value.id) &&
     isString(value.title) &&
-    isString(value.source_path) &&
     isString(value.file_type) &&
-    isString(value.status)
+    isDocumentStatus(value.status)
   )
 }
 

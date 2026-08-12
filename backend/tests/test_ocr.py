@@ -1,8 +1,16 @@
 import os
+import subprocess
 import sys
 
+import pytest
+
 from glyph.config import Settings
-from glyph.ocr import MockOcrAdapter, UnlimitedOcrAdapter
+from glyph.ocr import (
+    MockOcrAdapter,
+    OcrUnavailableError,
+    UnlimitedOcrAdapter,
+    create_ocr_adapter,
+)
 
 
 def test_mock_ocr_extracts_text_backed_pdf_with_pdftotext(tmp_path, monkeypatch):
@@ -20,7 +28,10 @@ def test_mock_ocr_extracts_text_backed_pdf_with_pdftotext(tmp_path, monkeypatch)
 
     pages = MockOcrAdapter().extract_pages(source)
 
-    assert pages[0].text == "# Real PDF Title\n\nThis is embedded PDF text, not fallback text."
+    assert (
+        pages[0].text
+        == "# Real PDF Title\n\nThis is embedded PDF text, not fallback text."
+    )
 
 
 def test_mock_ocr_splits_text_backed_pdf_by_form_feed_pages(tmp_path, monkeypatch):
@@ -71,3 +82,112 @@ def test_unlimited_ocr_adapter_runs_configured_command_and_reads_markdown(tmp_pa
 
     assert pages[0].page_number == 1
     assert pages[0].text == "# Parsed\n\nUnlimited OCR output"
+
+
+def test_text_pdf_extraction_uses_resolved_executable_and_timeout(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4\n\xff\xfe binary pdf")
+    observed = {}
+
+    monkeypatch.setattr(
+        "glyph.ocr.shutil.which", lambda executable: f"/opt/poppler/{executable}"
+    )
+
+    def timeout_when_bounded(command, **kwargs):
+        observed["command"] = command
+        observed["timeout"] = kwargs.get("timeout")
+        if kwargs.get("timeout") is None:
+            return subprocess.CompletedProcess(command, 1, "", "missing timeout")
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr("glyph.ocr.subprocess.run", timeout_when_bounded)
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'data' / 'glyph.sqlite3'}",
+        ocr_mode="mock",
+        ai_mode="mock",
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command=None,
+        ocr_timeout_seconds=7,
+    )
+
+    with pytest.raises(
+        OcrUnavailableError, match="PDF text extraction timed out after 7 seconds"
+    ) as error:
+        create_ocr_adapter(settings).extract_pages(source)
+
+    assert observed == {
+        "command": ["/opt/poppler/pdftotext", "-layout", str(source), "-"],
+        "timeout": 7,
+    }
+    assert str(source) not in str(error.value)
+
+
+def test_unlimited_ocr_uses_timeout_and_resolved_executable(tmp_path, monkeypatch):
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    observed = {}
+
+    monkeypatch.setattr(
+        "glyph.ocr.shutil.which", lambda executable: f"/opt/bin/{executable}"
+    )
+
+    def timeout_when_bounded(command, **kwargs):
+        observed["command"] = command
+        observed["timeout"] = kwargs.get("timeout")
+        if kwargs.get("timeout") is None:
+            return subprocess.CompletedProcess(command, 1, "", "missing timeout")
+        raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+
+    monkeypatch.setattr("glyph.ocr.subprocess.run", timeout_when_bounded)
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'data' / 'glyph.sqlite3'}",
+        ocr_mode="unlimited_ocr",
+        ai_mode="mock",
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command="fake-ocr --input {input} --output_dir {output_dir}",
+        ocr_timeout_seconds=11,
+    )
+
+    with pytest.raises(
+        OcrUnavailableError, match="Unlimited-OCR timed out after 11 seconds"
+    ):
+        UnlimitedOcrAdapter(settings).extract_pages(source)
+
+    assert observed["command"][0] == "/opt/bin/fake-ocr"
+    assert observed["timeout"] == 11
+
+
+def test_unlimited_ocr_failure_does_not_expose_tool_output(tmp_path, monkeypatch):
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"%PDF-1.4")
+    monkeypatch.setattr("glyph.ocr.shutil.which", lambda executable: executable)
+    monkeypatch.setattr(
+        "glyph.ocr.subprocess.run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command,
+            2,
+            "",
+            f"private source: {source} " + "x" * 1000,
+        ),
+    )
+    settings = Settings(
+        book_dir=tmp_path / "book",
+        data_dir=tmp_path / "data",
+        database_url=f"sqlite:///{tmp_path / 'data' / 'glyph.sqlite3'}",
+        ocr_mode="unlimited_ocr",
+        ai_mode="mock",
+        unlimited_ocr_repo=None,
+        unlimited_ocr_command="fake-ocr --input {input} --output_dir {output_dir}",
+    )
+
+    with pytest.raises(OcrUnavailableError) as error:
+        UnlimitedOcrAdapter(settings).extract_pages(source)
+
+    assert str(error.value) == "Unlimited-OCR command failed with exit code 2"
+    assert str(source) not in str(error.value)

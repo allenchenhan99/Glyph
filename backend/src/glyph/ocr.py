@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import shlex
 import shutil
-import subprocess
+
+# OCR adapters use resolved executables, argv only, and explicit timeouts.
+import subprocess  # nosec B404
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -24,9 +26,12 @@ class OcrPage:
 
 
 class MockOcrAdapter:
+    def __init__(self, timeout_seconds: int = 300):
+        self.timeout_seconds = timeout_seconds
+
     def extract_pages(self, source_path: Path) -> list[OcrPage]:
         if source_path.suffix.lower() == ".pdf":
-            pdf_pages = extract_text_backed_pdf_pages(source_path)
+            pdf_pages = extract_text_backed_pdf_pages(source_path, self.timeout_seconds)
             if pdf_pages:
                 return pdf_pages
 
@@ -49,7 +54,9 @@ class UnlimitedOcrAdapter:
         self.settings = settings
 
     def extract_pages(self, source_path: Path) -> list[OcrPage]:
-        output_dir = self.settings.data_dir / "ocr" / f"{source_path.stem}-{uuid4().hex}"
+        output_dir = (
+            self.settings.data_dir / "ocr" / f"{source_path.stem}-{uuid4().hex}"
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         if self.settings.unlimited_ocr_command:
             self._run_configured_command(source_path, output_dir)
@@ -63,12 +70,18 @@ class UnlimitedOcrAdapter:
         return [OcrPage(page_number=1, text=read_markdown_output(output_dir))]
 
     def _run_configured_command(self, source_path: Path, output_dir: Path) -> None:
-        assert self.settings.unlimited_ocr_command is not None
-        command = self.settings.unlimited_ocr_command.format(
+        configured_command = self.settings.unlimited_ocr_command
+        if configured_command is None:
+            raise OcrUnavailableError("Unlimited-OCR command is not configured.")
+        command = configured_command.format(
             input=shlex.quote(str(source_path)),
             output_dir=shlex.quote(str(output_dir)),
         )
-        run_command(shlex.split(command), cwd=self.settings.unlimited_ocr_repo)
+        run_command(
+            shlex.split(command),
+            cwd=self.settings.unlimited_ocr_repo,
+            timeout_seconds=self.settings.ocr_timeout_seconds,
+        )
 
     def _run_repo_infer(self, source_path: Path, output_dir: Path) -> None:
         repo = self.settings.unlimited_ocr_repo
@@ -76,7 +89,9 @@ class UnlimitedOcrAdapter:
             raise OcrUnavailableError("GLYPH_UNLIMITED_OCR_REPO is not set.")
         infer_py = repo / "infer.py"
         if not infer_py.exists():
-            raise OcrUnavailableError(f"Unlimited-OCR infer.py not found at {infer_py}")
+            raise OcrUnavailableError(
+                "Unlimited-OCR infer.py was not found in the configured repository."
+            )
 
         if source_path.suffix.lower() == ".pdf":
             run_command(
@@ -91,6 +106,7 @@ class UnlimitedOcrAdapter:
                     "base",
                 ],
                 cwd=repo,
+                timeout_seconds=self.settings.ocr_timeout_seconds,
             )
             return
 
@@ -109,26 +125,36 @@ class UnlimitedOcrAdapter:
                     "gundam",
                 ],
                 cwd=repo,
+                timeout_seconds=self.settings.ocr_timeout_seconds,
             )
 
 
 def create_ocr_adapter(settings: Settings) -> MockOcrAdapter | UnlimitedOcrAdapter:
     if settings.ocr_mode == "mock":
-        return MockOcrAdapter()
+        return MockOcrAdapter(settings.ocr_timeout_seconds)
     if settings.ocr_mode == "unlimited_ocr":
         return UnlimitedOcrAdapter(settings)
     raise OcrUnavailableError(f"Unknown OCR mode: {settings.ocr_mode}")
 
 
-def extract_text_backed_pdf_pages(source_path: Path) -> list[OcrPage]:
-    if shutil.which("pdftotext") is None:
+def extract_text_backed_pdf_pages(
+    source_path: Path, timeout_seconds: int = 300
+) -> list[OcrPage]:
+    executable = shutil.which("pdftotext")
+    if executable is None:
         return []
-    completed = subprocess.run(
-        ["pdftotext", "-layout", str(source_path), "-"],
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(  # nosec B603
+            [executable, "-layout", str(source_path), "-"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise OcrUnavailableError(
+            f"PDF text extraction timed out after {timeout_seconds} seconds"
+        ) from exc
     if completed.returncode != 0:
         return []
     pages: list[OcrPage] = []
@@ -139,25 +165,37 @@ def extract_text_backed_pdf_pages(source_path: Path) -> list[OcrPage]:
     return pages
 
 
-def run_command(command: list[str], cwd: Path | None) -> None:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        capture_output=True,
-        check=False,
-        text=True,
-    )
+def run_command(command: list[str], cwd: Path | None, timeout_seconds: int) -> None:
+    executable = shutil.which(command[0])
+    if executable is None:
+        name = Path(command[0]).name
+        raise OcrUnavailableError(f"{name} is not installed or executable")
+    resolved_command = [executable, *command[1:]]
+    try:
+        completed = subprocess.run(  # nosec B603
+            resolved_command,
+            cwd=cwd,
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise OcrUnavailableError(
+            f"Unlimited-OCR timed out after {timeout_seconds} seconds"
+        ) from exc
     if completed.returncode != 0:
         raise OcrUnavailableError(
-            "Unlimited-OCR command failed: "
-            f"{completed.stderr.strip() or completed.stdout.strip() or completed.returncode}"
+            f"Unlimited-OCR command failed with exit code {completed.returncode}"
         )
 
 
 def read_markdown_output(output_dir: Path) -> str:
-    markdown_files = sorted(output_dir.rglob("*.md"), key=lambda path: path.stat().st_mtime)
+    markdown_files = sorted(
+        output_dir.rglob("*.md"), key=lambda path: path.stat().st_mtime
+    )
     if not markdown_files:
-        raise OcrUnavailableError(f"Unlimited-OCR produced no markdown output in {output_dir}")
+        raise OcrUnavailableError("Unlimited-OCR produced no markdown output.")
     texts = [path.read_text(encoding="utf-8").strip() for path in markdown_files]
     text = "\n\n".join(part for part in texts if part)
     if not text:

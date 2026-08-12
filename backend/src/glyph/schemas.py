@@ -6,7 +6,6 @@ from pydantic import BaseModel
 class DocumentOut(BaseModel):
     id: str
     title: str
-    source_path: str
     file_type: str
     status: str
 

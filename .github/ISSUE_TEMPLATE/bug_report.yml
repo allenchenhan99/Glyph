@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a reproducible Glyph defect without private document data.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not attach source documents, credentials, private paths, or provider output. Use SECURITY.md for vulnerabilities.
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start Glyph with ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Glyph revision
+      description: Commit SHA or release tag.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python, Node.js, GLYPH_AI_MODE, and GLYPH_OCR_MODE.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Remove document text, tokens, local paths, and provider responses.

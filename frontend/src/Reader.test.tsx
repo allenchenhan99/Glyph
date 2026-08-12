@@ -8,7 +8,6 @@ const payload: ReaderPayload = {
   document: {
     id: 'doc-1',
     title: 'sample.pdf',
-    source_path: '/book/sample.pdf',
     file_type: 'pdf',
     status: 'completed'
   },
@@ -134,5 +133,20 @@ describe('Reader', () => {
     render(<Reader payload={manyBlocks} />)
 
     expect(screen.getByTestId('reader-row-block-94')).toBeInTheDocument()
+  })
+
+  it('warns when the reader is an older snapshot of a changed source', () => {
+    render(
+      <Reader
+        payload={{
+          ...payload,
+          document: { ...payload.document, status: 'stale' }
+        }}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This reader was generated from an older source version. Reprocess the document to update it.'
+    )
   })
 })

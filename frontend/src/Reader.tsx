@@ -56,6 +56,13 @@ export function Reader({ payload }: ReaderProps) {
           </div>
         </header>
 
+        {payload.document.status === 'stale' ? (
+          <p className="reader-warning" role="alert">
+            This reader was generated from an older source version. Reprocess the document to update
+            it.
+          </p>
+        ) : null}
+
         <div className="block-table">
           <div className="block-grid block-grid-head" aria-hidden="true">
             <span>Source</span>

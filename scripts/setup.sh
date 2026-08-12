@@ -15,13 +15,18 @@ if ! "$PYTHON_BIN" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,
 fi
 
 if ! command -v npm >/dev/null 2>&1; then
-  echo "npm was not found. Install a current Node.js LTS release." >&2
+  echo "npm was not found. Install Node.js 22 or newer." >&2
+  exit 1
+fi
+
+if ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)'; then
+  echo "Glyph requires Node.js 22 or newer." >&2
   exit 1
 fi
 
 echo "Creating Python environment..."
 "$PYTHON_BIN" -m venv "$ROOT_DIR/.venv"
-"$ROOT_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$ROOT_DIR/.venv/bin/python" -m pip install --upgrade pip setuptools wheel
 "$ROOT_DIR/.venv/bin/python" -m pip install -e "$ROOT_DIR/backend[dev]"
 
 echo "Installing frontend dependencies..."
