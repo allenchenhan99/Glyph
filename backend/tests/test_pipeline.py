@@ -165,6 +165,9 @@ def test_persistence_failure_keeps_last_good_reader_snapshot(tmp_path, monkeypat
         assert document is not None
 
     assert failed_job["status"] == "failed"
+    assert failed_job["error_message"] == (
+        "Processing failed. Check the server logs for details."
+    )
     assert after == before
     assert document.status == "completed"
     assert document.processed_content_hash == processed_hash

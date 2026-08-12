@@ -46,8 +46,15 @@ export function App() {
   async function handleProcess(document: DocumentRecord) {
     setNotice({ kind: 'status', message: `Processing ${document.title}` })
     try {
-      await processDocument(document.id)
+      const job = await processDocument(document.id)
       await refreshDocuments()
+      if (job.status !== 'completed') {
+        setNotice({
+          kind: 'error',
+          message: job.error_message ?? `Processing failed for ${document.title}`
+        })
+        return
+      }
       setNotice({ kind: 'status', message: `Processed ${document.title}` })
     } catch (error) {
       console.error(error)

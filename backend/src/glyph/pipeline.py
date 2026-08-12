@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -10,9 +11,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from glyph.ai import ParsedBlock, create_ai_adapter
+from glyph.cli_ai import CliAiError
 from glyph.config import Settings
 from glyph.models import Block, Document, Page, ProcessingJob, Section, Summary
-from glyph.ocr import create_ocr_adapter
+from glyph.ocr import OcrUnavailableError, create_ocr_adapter
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingConflictError(RuntimeError):
@@ -76,13 +80,22 @@ def process_document(
         job.stage = "completed"
         job.progress = 100
     except Exception as exc:  # noqa: BLE001 - adapters may raise provider errors
+        logger.exception(
+            "Document processing failed", extra={"document_id": document.id}
+        )
         job.status = "failed"
         job.stage = "failed"
         job.progress = 100
-        job.error_message = str(exc)
+        job.error_message = public_processing_error(exc)
         document.status = previous_status if had_reader_snapshot else "failed"
     session.flush()
     return job
+
+
+def public_processing_error(exc: Exception) -> str:
+    if isinstance(exc, (CliAiError, OcrUnavailableError)):
+        return str(exc)
+    return "Processing failed. Check the server logs for details."
 
 
 def replace_reader_snapshot(session: Session, document: Document, ocr_pages, parsed):

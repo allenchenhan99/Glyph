@@ -121,6 +121,25 @@ describe('App', () => {
     expect(screen.queryByText('Processed sample.pdf')).not.toBeInTheDocument()
   })
 
+  it('treats a failed processing job as an error even when the request succeeded', async () => {
+    mockedProcessDocument.mockResolvedValue({
+      id: 'job-1',
+      document_id: 'doc-1',
+      status: 'failed',
+      stage: 'failed',
+      progress: 100,
+      error_message: 'Unlimited-OCR is selected but not configured.'
+    })
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Process sample.pdf' }))
+
+    expect(
+      await screen.findByText('Unlimited-OCR is selected but not configured.')
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Processed sample.pdf')).not.toBeInTheDocument()
+  })
+
   it('shows a safe upload error returned by the backend', async () => {
     mockedUploadDocument.mockRejectedValue(new ApiError(413, 'Upload exceeds the 50 MiB limit.'))
 
