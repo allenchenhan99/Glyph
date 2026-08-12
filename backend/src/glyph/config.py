@@ -18,6 +18,17 @@ class Settings:
     cli_batch_size: int = 24
     cli_timeout_seconds: int = 300
     cli_concurrency: int = 3
+    max_upload_bytes: int = 50 * 1024 * 1024
+
+
+def positive_int_from_env(name: str, default: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    return value
 
 
 def get_settings() -> Settings:
@@ -42,4 +53,7 @@ def get_settings() -> Settings:
         cli_batch_size=int(os.environ.get("GLYPH_CLI_BATCH_SIZE", "24")),
         cli_timeout_seconds=int(os.environ.get("GLYPH_CLI_TIMEOUT_SECONDS", "300")),
         cli_concurrency=int(os.environ.get("GLYPH_CLI_CONCURRENCY", "3")),
+        max_upload_bytes=positive_int_from_env(
+            "GLYPH_MAX_UPLOAD_BYTES", 50 * 1024 * 1024
+        ),
     )

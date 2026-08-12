@@ -18,6 +18,13 @@ from glyph.pipeline import get_job, process_document
 from glyph.schemas import BlockOut, DocumentOut, JobOut, ReaderOut, SectionOut
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+FILE_SIGNATURES = {
+    ".pdf": b"%PDF-",
+    ".png": b"\x89PNG\r\n\x1a\n",
+    ".jpg": b"\xff\xd8\xff",
+    ".jpeg": b"\xff\xd8\xff",
+}
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
@@ -53,20 +60,23 @@ def compute_hash(path: Path) -> str:
 
 
 def register_document(
-    session: Session, source_path: Path, status: str | None = None
+    session: Session,
+    source_path: Path,
+    status: str | None = None,
+    title: str | None = None,
 ) -> Document:
     existing = session.scalar(
         select(Document).where(Document.source_path == str(source_path))
     )
     if existing is not None:
         refresh_document_state(existing, source_path, status or "discovered")
-        existing.title = source_path.name
+        existing.title = title or source_path.name
         return existing
 
     content_hash = compute_hash(source_path)
     document = Document(
         id=str(uuid4()),
-        title=source_path.name,
+        title=title or source_path.name,
         source_path=str(source_path),
         content_hash=content_hash,
         file_type=source_path.suffix.lower().lstrip("."),
@@ -74,6 +84,44 @@ def register_document(
     )
     session.add(document)
     return document
+
+
+def has_expected_signature(source_path: Path, suffix: str) -> bool:
+    expected = FILE_SIGNATURES[suffix]
+    with source_path.open("rb") as stored_file:
+        return stored_file.read(len(expected)) == expected
+
+
+async def store_upload(
+    file: UploadFile,
+    upload_dir: Path,
+    suffix: str,
+    max_upload_bytes: int,
+) -> Path:
+    storage_id = uuid4().hex
+    temporary_path = upload_dir / f".{storage_id}.uploading"
+    target_path = upload_dir / f"{storage_id}{suffix}"
+    byte_count = 0
+    try:
+        with temporary_path.open("xb") as stored_file:
+            while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+                byte_count += len(chunk)
+                if byte_count > max_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(f"Upload exceeds the {max_upload_bytes} byte limit"),
+                    )
+                stored_file.write(chunk)
+        if not has_expected_signature(temporary_path, suffix):
+            raise HTTPException(
+                status_code=400,
+                detail=f"File content does not match {suffix}",
+            )
+        temporary_path.replace(target_path)
+        return target_path
+    finally:
+        temporary_path.unlink(missing_ok=True)
+        await file.close()
 
 
 def refresh_document_state(
@@ -219,9 +267,8 @@ async def upload_document(
 
     upload_dir = settings.data_dir / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
-    target = upload_dir / filename
-    target.write_bytes(await file.read())
-    document = register_document(session, target, status="uploaded")
+    target = await store_upload(file, upload_dir, suffix, settings.max_upload_bytes)
+    document = register_document(session, target, status="uploaded", title=filename)
     session.flush()
     return document_to_out(document)
 
