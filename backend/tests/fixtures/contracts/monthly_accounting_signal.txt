@@ -1,0 +1,13 @@
+MONTHLY ACCOUNTING SIGNAL
+Thesis: Firms with high book-to-market ratios earn higher subsequent returns than firms with low ratios.
+Data: We use Compustat annual book equity and CRSP monthly common-stock returns from January 1990 through December 2020.
+Fields: The implementation requires book equity, market equity, monthly return, exchange code, share code, and market capitalization.
+Availability: Book equity for fiscal year t becomes usable six months after fiscal year end.
+Formation: Portfolios form six months after fiscal year end, so no accounting report is used early.
+Universe: The sample contains NYSE, AMEX, and NASDAQ common stocks with positive book equity and a price above five dollars.
+Signal: Book-to-market equals book equity divided by market equity, and higher values predict higher returns.
+Ranking: Eligible stocks are ranked into deciles using NYSE breakpoints.
+Portfolio: We form value-weighted deciles at each month end, rebalance monthly, and hold each position for one month.
+Evaluation: We report long-short factor alpha relative to the Fama-French three-factor model with Newey-West t-statistics.
+Friction: We subtract 20 basis points per one-way trade and report portfolio turnover.
+Risk: Delisting returns are included, and survivorship-biased security histories are forbidden.

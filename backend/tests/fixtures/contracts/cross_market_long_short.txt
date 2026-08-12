@@ -1,0 +1,14 @@
+CROSS-MARKET LONG-SHORT SIGNAL
+Thesis: Medium-horizon momentum ranks securities consistently across US and Japanese equity markets.
+Data: We use split-adjusted daily closing prices and total returns for US and Japanese common stocks from 2000 through 2021.
+Fields: The implementation requires adjusted close, total return, market identifier, local trading date, and security type.
+Availability: Market closes are aligned to 16:30 UTC, and an aligned close is usable after the later market has closed.
+Formation: Signals formed from aligned closes first trade on each security's next local business day.
+Universe: Each market keeps locally listed common stocks with at least one hundred twenty valid return observations.
+Signal: Sixty-business-day cumulative return, skipping the latest five business days, determines the momentum rank.
+Direction: The strategy buys the top quintile and shorts the bottom quintile within each market.
+Portfolio: Positions rebalance monthly and remain open for one month.
+Weighting: The paper does not specify how securities inside a quintile are weighted.
+Evaluation: The reported target is gross long-short raw return with a block-bootstrap confidence interval.
+Friction: Transaction costs and market-impact assumptions are not reported.
+Risk: Local holidays must not be filled with future prices when market calendars are aligned.
