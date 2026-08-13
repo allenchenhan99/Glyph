@@ -1,9 +1,30 @@
-import { BookOpen, FileUp, Loader2, Play, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { BookOpen, FileSearch, FileUp, Loader2, Play, RefreshCw } from 'lucide-react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 
-import { ApiError, getReader, listDocuments, processDocument, uploadDocument } from './api'
+import {
+  ApiError,
+  enqueueResearchMap,
+  getActiveResearchMap,
+  getReader,
+  getResearchMapJob,
+  listDocuments,
+  processDocument,
+  reviewResearchNode,
+  uploadDocument
+} from './api'
 import { Reader } from './Reader'
-import type { DocumentRecord, ReaderPayload } from './types'
+import { ResearchMap } from './ResearchMap'
+import {
+  initialResearchMapState,
+  pollResearchMapJob,
+  researchMapReducer
+} from './researchMapState'
+import type {
+  DocumentRecord,
+  ReaderPayload,
+  ResearchNodeReview,
+  ReviewStatus
+} from './types'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 type Notice = { kind: 'status' | 'error'; message: string } | null
@@ -13,6 +34,12 @@ export function App() {
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [notice, setNotice] = useState<Notice>(null)
   const [reader, setReader] = useState<ReaderPayload | null>(null)
+  const [activeDocument, setActiveDocument] = useState<DocumentRecord | null>(null)
+  const [mapState, dispatchMap] = useReducer(researchMapReducer, initialResearchMapState)
+  const pollController = useRef<AbortController | null>(null)
+  const reviewRequestSequence = useRef(0)
+
+  useEffect(() => () => pollController.current?.abort(), [])
 
   async function refreshDocuments() {
     setLoadState('loading')
@@ -65,10 +92,15 @@ export function App() {
     }
   }
 
-  async function handleOpen(document: DocumentRecord) {
+  async function handleOpenReader(document: DocumentRecord) {
     setNotice({ kind: 'status', message: `Opening ${document.title}` })
     try {
-      setReader(await getReader(document.id))
+      pollController.current?.abort()
+      const nextReader = await getReader(document.id)
+      setActiveDocument(document)
+      setReader(nextReader)
+      dispatchMap({ type: 'resetWorkspace' })
+      dispatchMap({ type: 'openReader', blockId: '' })
       setNotice(null)
     } catch (error) {
       console.error(error)
@@ -79,10 +111,109 @@ export function App() {
     }
   }
 
+  async function handleOpenMap(document: DocumentRecord) {
+    pollController.current?.abort()
+    setActiveDocument(document)
+    setReader(null)
+    dispatchMap({ type: 'resetWorkspace' })
+    dispatchMap({ type: 'mapLoading' })
+    try {
+      dispatchMap({ type: 'mapLoaded', map: await getActiveResearchMap(document.id) })
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        dispatchMap({ type: 'mapAbsent' })
+        return
+      }
+      console.error(error)
+      dispatchMap({
+        type: 'mapFailed',
+        message: errorMessage(error, `Could not load the Research Map for ${document.title}.`)
+      })
+    }
+  }
+
+  async function handleGenerateMap() {
+    if (!activeDocument) return
+    pollController.current?.abort()
+    const controller = new AbortController()
+    pollController.current = controller
+    try {
+      const queued = await enqueueResearchMap(activeDocument.id)
+      dispatchMap({ type: 'jobUpdated', job: queued })
+      const terminal = await pollResearchMapJob(queued.id, {
+        fetchJob: getResearchMapJob,
+        onJob: (job) => dispatchMap({ type: 'jobUpdated', job }),
+        signal: controller.signal
+      })
+      if (terminal?.status === 'completed') {
+        dispatchMap({ type: 'mapLoaded', map: await getActiveResearchMap(activeDocument.id) })
+        await refreshDocuments()
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return
+      console.error(error)
+      dispatchMap({
+        type: 'mapFailed',
+        message: errorMessage(error, 'Could not generate the Research Map.')
+      })
+    }
+  }
+
+  async function handleMapEvidence(blockId: string) {
+    if (!activeDocument) return
+    try {
+      setReader(await getReader(activeDocument.id))
+      dispatchMap({ type: 'openReader', blockId })
+    } catch (error) {
+      console.error(error)
+      dispatchMap({
+        type: 'mapFailed',
+        message: errorMessage(error, 'The cited Reader block could not be opened.')
+      })
+    }
+  }
+
+  async function handleReview(
+    status: ReviewStatus,
+    correctedClaimText: string | null,
+    reviewNote: string | null
+  ) {
+    const node = mapState.map?.nodes.find((item) => item.id === mapState.selectedNodeId)
+    if (!node || mapState.pendingReview) return
+    const requestId = `review-${++reviewRequestSequence.current}`
+    const optimisticReview: ResearchNodeReview = {
+      id: `optimistic-${node.id}`,
+      status,
+      corrected_claim_text: correctedClaimText,
+      review_note: reviewNote,
+      revision_number: (node.review?.revision_number ?? 0) + 1,
+      supersedes_review_id: node.review?.id ?? null,
+      reviewed_at: new Date().toISOString()
+    }
+    dispatchMap({ type: 'reviewOptimistic', requestId, nodeId: node.id, review: optimisticReview })
+    try {
+      const saved = await reviewResearchNode(node.id, {
+        status,
+        based_on_node_signature: node.node_signature,
+        corrected_claim_text: correctedClaimText,
+        review_note: reviewNote
+      })
+      dispatchMap({ type: 'reviewSaved', requestId, nodeId: node.id, review: saved })
+      await refreshDocuments()
+    } catch (error) {
+      console.error(error)
+      const message =
+        error instanceof ApiError && error.status === 409
+          ? `${error.message} Reload the Research Map and review it again.`
+          : errorMessage(error, 'The review was not saved. Try again.')
+      dispatchMap({ type: 'reviewConflict', requestId, message })
+    }
+  }
+
   return (
     <main className="app-shell">
       <section
-        className={reader ? 'library-panel library-panel-compact' : 'library-panel'}
+        className={reader || activeDocument ? 'library-panel library-panel-compact' : 'library-panel'}
         aria-labelledby="library-title"
       >
         <div className="topbar">
@@ -132,6 +263,13 @@ export function App() {
                   <p>
                     {document.file_type.toUpperCase()} · {documentStatusLabel(document.status)}
                   </p>
+                  {document.research_map ? (
+                    <div className="library-map-summary" aria-label={`Research Map status for ${document.title}`}>
+                      <span>{document.research_map.reviewed_core_nodes} / {document.research_map.reviewable_core_nodes} verified</span>
+                      <span>{document.research_map.issue_count} evidence gap{document.research_map.issue_count === 1 ? '' : 's'}</span>
+                      <span>{document.research_map.is_stale ? 'Stale' : 'Current'} · {document.research_map.status}</span>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="row-actions">
@@ -147,11 +285,20 @@ export function App() {
                 <button
                   type="button"
                   className="icon-button secondary"
-                  onClick={() => void handleOpen(document)}
-                  aria-label={`Open ${document.title}`}
+                  onClick={() => void handleOpenMap(document)}
+                  aria-label={`Open Research Map for ${document.title}`}
+                >
+                  <FileSearch aria-hidden="true" size={16} />
+                  <span>Research Map</span>
+                </button>
+                <button
+                  type="button"
+                  className="icon-button tertiary"
+                  onClick={() => void handleOpenReader(document)}
+                  aria-label={`Open Full Reader for ${document.title}`}
                 >
                   <BookOpen aria-hidden="true" size={16} />
-                  <span>Open</span>
+                  <span>Full Reader</span>
                 </button>
               </div>
             </article>
@@ -159,7 +306,49 @@ export function App() {
         </div>
       </section>
 
-      {reader ? <Reader payload={reader} /> : null}
+      {activeDocument && mapState.mode === 'map' ? (
+        mapState.loadStatus === 'loading' ? (
+          <section className="workspace-loading" aria-label="Loading Research Map">
+            <Loader2 aria-hidden="true" size={20} /> Loading Research Map
+          </section>
+        ) : (
+          <ResearchMap
+            map={mapState.map}
+            selectedNodeId={mapState.selectedNodeId}
+            guidedStep={mapState.guidedStep}
+            inspectorOpen={mapState.inspectorOpen}
+            notice={mapState.notice}
+            job={mapState.job}
+            reviewPending={mapState.pendingReview !== null}
+            onSelectNode={(nodeId) => dispatchMap({ type: 'selectNode', nodeId })}
+            onOpenInspector={() => dispatchMap({ type: 'openInspector' })}
+            onCloseInspector={() => dispatchMap({ type: 'closeInspector' })}
+            onGuidedNext={() => dispatchMap({ type: 'guidedNext' })}
+            onGuidedPrevious={() => dispatchMap({ type: 'guidedPrevious' })}
+            onOpenReader={(blockId) => void handleMapEvidence(blockId)}
+            onReview={(status, corrected, note) => void handleReview(status, corrected, note)}
+            onGenerate={() => void handleGenerateMap()}
+          />
+        )
+      ) : null}
+      {reader && mapState.mode === 'reader' ? (
+        <Reader
+          payload={reader}
+          focusBlockId={mapState.readerFocusBlockId || null}
+          citingNodes={
+            mapState.readerFocusBlockId
+              ? (mapState.map?.nodes ?? [])
+                  .filter((node) =>
+                    node.evidence.some(
+                      (evidence) => evidence.block_id === mapState.readerFocusBlockId
+                    )
+                  )
+                  .map((node) => ({ id: node.id, title: node.title }))
+              : []
+          }
+          onReturnToMap={mapState.map ? () => dispatchMap({ type: 'returnToMap' }) : undefined}
+        />
+      ) : null}
     </main>
   )
 }

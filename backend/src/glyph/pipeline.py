@@ -7,13 +7,21 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from glyph.ai import ParsedBlock, create_ai_adapter
 from glyph.cli_ai import CliAiError
 from glyph.config import Settings
-from glyph.models import Block, Document, Page, ProcessingJob, Section, Summary
+from glyph.models import (
+    Block,
+    Document,
+    Page,
+    ProcessingJob,
+    ResearchEvidence,
+    Section,
+    Summary,
+)
 from glyph.ocr import OcrUnavailableError, create_ocr_adapter
 
 logger = logging.getLogger(__name__)
@@ -112,7 +120,14 @@ def replace_reader_snapshot(session: Session, document: Document, ocr_pages, par
         )
     section_by_title = persist_sections(session, document.id, parsed.sections)
     for parsed_block in parsed.blocks:
-        session.add(block_from_parsed(document.id, parsed_block, section_by_title))
+        session.add(
+            block_from_parsed(
+                document.id,
+                parsed_block,
+                section_by_title,
+                source_content_hash=document.content_hash,
+            )
+        )
     session.add(
         Summary(
             id=str(uuid4()),
@@ -127,7 +142,23 @@ def replace_reader_snapshot(session: Session, document: Document, ocr_pages, par
 
 
 def clear_document_outputs(session: Session, document_id: str) -> None:
-    for model in (Block, Summary, Page, Section):
+    cited_block_ids = (
+        select(ResearchEvidence.block_id)
+        .join(Block, ResearchEvidence.block_id == Block.id)
+        .where(Block.document_id == document_id)
+    )
+    session.execute(
+        update(Block)
+        .where(Block.document_id == document_id, Block.id.in_(cited_block_ids))
+        .values(section_id=None)
+    )
+    session.execute(
+        delete(Block).where(
+            Block.document_id == document_id,
+            Block.id.not_in(cited_block_ids),
+        )
+    )
+    for model in (Summary, Page, Section):
         session.execute(delete(model).where(model.document_id == document_id))
 
 
@@ -163,6 +194,7 @@ def block_from_parsed(
     document_id: str,
     parsed_block: ParsedBlock,
     section_by_title: dict[str, Section],
+    source_content_hash: str | None = None,
 ) -> Block:
     section = section_by_title.get(parsed_block.section_title) or next(
         iter(section_by_title.values())
@@ -170,6 +202,7 @@ def block_from_parsed(
     return Block(
         id=str(uuid4()),
         document_id=document_id,
+        source_content_hash=source_content_hash,
         section_id=section.id,
         order_index=parsed_block.order_index,
         page_number=parsed_block.page_number,

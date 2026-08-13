@@ -106,11 +106,11 @@ class CliAiAdapter:
         cache_path = None
         if self.cache_dir is not None:
             cache_path = self.batch_cache_path(prompt)
+            cached = load_json_cache(cache_path)
             try:
-                cached = json.loads(cache_path.read_text(encoding="utf-8"))
-                if isinstance(cached, dict):
+                if cached is not None:
                     return validate_batch_response(cached, batch)
-            except (FileNotFoundError, json.JSONDecodeError, OSError, CliAiError):
+            except CliAiError:
                 cache_path.unlink(missing_ok=True)
 
         last_error = None
@@ -129,7 +129,7 @@ class CliAiAdapter:
                 current_prompt = add_retry_instruction(prompt, str(exc))
                 continue
             if cache_path is not None:
-                self.store_batch_cache(cache_path, response)
+                store_json_cache(cache_path, response)
             return validated
         raise last_error or CliAiError("CLI returned an invalid translation batch")
 
@@ -144,12 +144,28 @@ class CliAiAdapter:
     def store_batch_cache(self, cache_path: Path, response: dict) -> None:
         if self.cache_dir is None:
             raise CliAiError("CLI cache directory is not configured")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        temporary_path = cache_path.with_suffix(".tmp")
-        temporary_path.write_text(
-            json.dumps(response, ensure_ascii=False), encoding="utf-8"
-        )
-        temporary_path.replace(cache_path)
+        store_json_cache(cache_path, response)
+
+
+def load_json_cache(cache_path: Path) -> dict | None:
+    try:
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        cache_path.unlink(missing_ok=True)
+        return None
+    if not isinstance(cached, dict):
+        cache_path.unlink(missing_ok=True)
+        return None
+    return cached
+
+
+def store_json_cache(cache_path: Path, response: dict) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = cache_path.with_suffix(".tmp")
+    temporary_path.write_text(
+        json.dumps(response, ensure_ascii=False), encoding="utf-8"
+    )
+    temporary_path.replace(cache_path)
 
 
 def build_translation_prompt(blocks) -> str:

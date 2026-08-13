@@ -26,6 +26,8 @@ def test_external_process_timeouts_have_conservative_defaults(monkeypatch):
 
     assert getattr(settings, "ocr_timeout_seconds", None) == 300
     assert getattr(settings, "page_render_timeout_seconds", None) == 30
+    assert getattr(settings, "research_job_max_attempts", None) == 2
+    assert getattr(settings, "research_cli_block_batch_size", None) == 12
 
 
 @pytest.mark.parametrize(
@@ -36,4 +38,20 @@ def test_external_process_timeouts_must_be_positive(monkeypatch, name):
     monkeypatch.setenv(name, "0")
 
     with pytest.raises(ValueError, match=f"{name} must be positive"):
+        get_settings()
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-a-number"])
+def test_research_job_max_attempts_must_be_positive(monkeypatch, value):
+    monkeypatch.setenv("GLYPH_RESEARCH_JOB_MAX_ATTEMPTS", value)
+
+    with pytest.raises(ValueError, match="GLYPH_RESEARCH_JOB_MAX_ATTEMPTS"):
+        get_settings()
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "not-a-number"])
+def test_research_cli_block_batch_size_must_be_positive(monkeypatch, value):
+    monkeypatch.setenv("GLYPH_RESEARCH_CLI_BLOCK_BATCH_SIZE", value)
+
+    with pytest.raises(ValueError, match="GLYPH_RESEARCH_CLI_BLOCK_BATCH_SIZE"):
         get_settings()
