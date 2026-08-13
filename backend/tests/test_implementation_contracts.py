@@ -1186,6 +1186,48 @@ def test_resolution_carries_only_to_an_identical_item_signature(
     )
 
 
+def test_new_resolution_continues_carried_revision_and_supersession_chain(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    first = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    first_item = _view_item(first, "required_dataset.1")
+    carried = append_contract_resolution(
+        session,
+        first_item.id,
+        status="confirmed",
+        based_on_item_signature=first_item.item_signature,
+        value=None,
+        reason=None,
+        request_id="carry-revision-1",
+    )
+    session.commit()
+
+    second = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    second_item = _view_item(second, first_item.item_key)
+    revised = append_contract_resolution(
+        session,
+        second_item.id,
+        status="questioned",
+        based_on_item_signature=second_item.item_signature,
+        value=None,
+        reason="Reopened on the regenerated Contract.",
+        request_id="carry-revision-2",
+    )
+    loaded = _view_item(
+        load_implementation_contract(session, second.id), first_item.item_key
+    )
+
+    assert revised.revision_number == 2
+    assert revised.supersedes_resolution_id == carried.id
+    assert [value.id for value in loaded.resolution_history] == [carried.id, revised.id]
+    assert loaded.resolution is not None and loaded.resolution.id == revised.id
+
+
 def test_resolution_never_applies_to_a_different_item_with_same_signature(
     contract_database_factory,
 ) -> None:

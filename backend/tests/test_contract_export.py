@@ -218,6 +218,54 @@ def test_export_separates_decisions_and_preserves_append_only_history(
     assert exported_item["decision"]["status"] == "questioned"
 
 
+def test_export_preserves_carried_decision_chain_order(export_contract):
+    session, version_id, _private_path = export_contract
+    contract = load_implementation_contract(session, version_id)
+    item = contract.items[0]
+    append_contract_resolution(
+        session,
+        item.id,
+        status="confirmed",
+        based_on_item_signature=item.item_signature,
+        value=None,
+        reason="First review.",
+        request_id="export-time-1",
+    )
+    session.commit()
+    regenerated = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(contract.document_id)
+    regenerated_item = next(
+        value for value in regenerated.items if value.item_key == item.item_key
+    )
+    append_contract_resolution(
+        session,
+        regenerated_item.id,
+        status="questioned",
+        based_on_item_signature=regenerated_item.item_signature,
+        value=None,
+        reason="Second review.",
+        request_id="export-time-2",
+    )
+    session.commit()
+
+    payload = json.loads(
+        export_implementation_contract(session, regenerated.id, "json", "en").content
+    )
+    exported_item = next(
+        value for value in payload["items"] if value["item_id"] == regenerated_item.id
+    )
+    assert [
+        decision["request_id"] for decision in exported_item["decision_history"]
+    ] == [
+        "export-time-1",
+        "export-time-2",
+    ]
+    assert [
+        decision["revision_number"] for decision in exported_item["decision_history"]
+    ] == [1, 2]
+
+
 def test_export_reaudits_and_refuses_persisted_false_ready_label(export_contract):
     session, version_id, _private_path = export_contract
     version = session.get(ImplementationContractVersion, version_id)

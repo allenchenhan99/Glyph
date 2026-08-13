@@ -32,7 +32,7 @@ class BlockOut(BaseModel):
     source_text: str
     translated_text: str
     formula_latex: str | None = None
-    page_image_url: str
+    page_image_url: str | None
     section_path: str | None = None
     confidence: float
 

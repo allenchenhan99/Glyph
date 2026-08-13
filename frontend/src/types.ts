@@ -43,7 +43,7 @@ export type ReaderBlock = {
   source_text: string
   translated_text: string
   formula_latex: string | null
-  page_image_url: string
+  page_image_url: string | null
   section_path: string | null
   confidence: number
 }

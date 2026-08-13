@@ -134,7 +134,11 @@ def build_canonical_contract_export(
                     _decision_payload(decision)
                     for decision in sorted(
                         item.resolution_history,
-                        key=lambda value: (value.revision_number, value.id),
+                        key=lambda value: (
+                            value.resolved_at,
+                            value.revision_number,
+                            value.id,
+                        ),
                     )
                 ],
             }

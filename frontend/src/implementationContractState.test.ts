@@ -203,7 +203,11 @@ describe('implementationContractReducer', () => {
     expect(saved?.resolution?.id).toBe('server-decision')
     expect(saved?.resolution_history.at(-1)?.id).toBe('server-decision')
     expect(state.pendingResolution).toBeNull()
-    expect(state.notice).toEqual({ kind: 'status', message: 'Decision saved.' })
+    expect(state.loadStatus).toBe('loading')
+    expect(state.notice).toEqual({
+      kind: 'status',
+      message: 'Decision saved. Verifying readiness.'
+    })
   })
 
   it('locks out reason-required decisions before optimistic mutation', () => {

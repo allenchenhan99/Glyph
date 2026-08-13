@@ -521,24 +521,31 @@ def append_contract_resolution(
             )
         return _resolution_view(existing)
 
-    latest = session.scalar(
-        select(ImplementationContractResolution)
-        .where(ImplementationContractResolution.item_id == item.id)
-        .order_by(
-            ImplementationContractResolution.revision_number.desc(),
-            ImplementationContractResolution.resolved_at.desc(),
-            ImplementationContractResolution.id.desc(),
-        )
+    lineage_resolutions = _load_resolution_models(
+        session,
+        _lineage_version_ids(session, version),
+        (item,),
     )
-    latest_revision = session.scalar(
-        select(func.max(ImplementationContractResolution.revision_number)).where(
-            ImplementationContractResolution.item_id == item.id
+    latest = (
+        max(
+            (resolution for resolution, _item_key in lineage_resolutions),
+            key=lambda resolution: (
+                resolution.resolved_at,
+                resolution.revision_number,
+                resolution.id,
+            ),
         )
+        if lineage_resolutions
+        else None
+    )
+    latest_revision = max(
+        (resolution.revision_number for resolution, _item_key in lineage_resolutions),
+        default=0,
     )
     resolution = ImplementationContractResolution(
         id=str(uuid4()),
         item_id=item.id,
-        revision_number=(latest_revision or 0) + 1,
+        revision_number=latest_revision + 1,
         supersedes_resolution_id=latest.id if latest is not None else None,
         status=resolution_draft.status,
         resolved_value_json=desired_value_json,

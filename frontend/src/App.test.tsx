@@ -584,6 +584,63 @@ describe('App', () => {
     expect(mockedGetActiveImplementationContract).toHaveBeenCalledTimes(2)
   })
 
+  it('never keeps a ready label when the authoritative post-save audit cannot load', async () => {
+    const readyContract = {
+      ...implementationContract,
+      readiness: 'implementation_ready' as const,
+      issues: []
+    }
+    const questionedResolution = {
+      id: 'resolution-questioned',
+      item_id: 'item-thesis',
+      revision_number: 2,
+      supersedes_resolution_id: 'resolution-confirmed',
+      status: 'questioned' as const,
+      resolved_value: null,
+      reason: 'Needs another review.',
+      based_on_contract_version_id: implementationContract.id,
+      based_on_item_signature: 'b'.repeat(64),
+      request_id: 'contract-resolution-1',
+      resolved_at: '2026-08-13T00:00:00Z'
+    }
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: {
+          ...implementationContractSummary,
+          readiness: 'implementation_ready',
+          blocker_count: 0
+        }
+      }
+    ])
+    mockedGetActiveImplementationContract
+      .mockResolvedValueOnce(readyContract)
+      .mockRejectedValueOnce(new ApiError(503, 'Audit reload unavailable.'))
+      .mockResolvedValueOnce({ ...readyContract, readiness: 'blocked' })
+    mockedResolveImplementationContractItem.mockResolvedValue(questionedResolution)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    expect(await screen.findByText('可進入實作')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Question supported item' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Readiness could not be verified after saving the decision.'
+    )
+    expect(screen.queryByText('可進入實作')).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText('Implementation Contract status for sample.pdf')
+    ).toHaveTextContent('Readiness unverified')
+    expect(
+      screen.getByLabelText('Implementation Contract status for sample.pdf')
+    ).not.toHaveTextContent('Implementation ready')
+    fireEvent.click(screen.getByRole('button', { name: 'Reload Implementation Contract' }))
+    expect(await screen.findByText('尚未可實作')).toBeInTheDocument()
+  })
+
   it('opens a linked Research Map node from Contract and returns to the same Contract item', async () => {
     mockedListDocuments.mockResolvedValue([
       {
@@ -613,6 +670,64 @@ describe('App', () => {
       'aria-current',
       'true'
     )
+  })
+
+  it('ignores late Contract Reader and Map deep links from a previous document', async () => {
+    let resolveReader!: (payload: ReaderPayload) => void
+    let resolveMap!: (map: typeof researchMapFixture) => void
+    mockedListDocuments.mockResolvedValue([
+      {
+        id: 'doc-1',
+        title: 'sample.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      },
+      {
+        id: 'doc-2',
+        title: 'second.pdf',
+        file_type: 'pdf',
+        status: 'completed',
+        implementation_contract: implementationContractSummary
+      }
+    ])
+    mockedGetActiveImplementationContract.mockImplementation(async (documentId) => ({
+      ...implementationContract,
+      id: documentId === 'doc-2' ? 'contract-2' : implementationContract.id,
+      document_id: documentId
+    }))
+    mockedGetReader.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveReader = resolve
+      })
+    )
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open evidence E01 in Reader' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Contract for second.pdf' }))
+    await screen.findByRole('navigation', { name: 'Implementation Contract outline' })
+    await act(async () => {
+      resolveReader({ ...readerPayload, blocks: [{ ...readerPayload.blocks[0], id: 'block-1' }] })
+      await Promise.resolve()
+    })
+    expect(screen.queryByTestId('reader-row-block-1')).not.toBeInTheDocument()
+
+    mockedGetResearchMapVersion.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveMap = resolve
+      })
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Required dataset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Open linked Research Map node' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    await screen.findByRole('navigation', { name: 'Implementation Contract outline' })
+    await act(async () => {
+      resolveMap(researchMapFixture)
+      await Promise.resolve()
+    })
+    expect(screen.queryByLabelText('Evidence Inspector for Data and sample')).not.toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: 'Implementation Contract outline' })).toBeInTheDocument()
   })
 
   it('loads Contract history and surfaces an activation conflict without false freshness', async () => {

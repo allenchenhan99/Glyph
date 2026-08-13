@@ -532,6 +532,15 @@ h1 {
   font-size: 0.74rem;
 }
 
+.snapshot-page-unavailable {
+  color: #52615c;
+  font-weight: 600;
+}
+
+.reader-row[data-focused='true'] .block-meta {
+  color: #52615c;
+}
+
 .citation-badges {
   display: flex;
   flex-wrap: wrap;

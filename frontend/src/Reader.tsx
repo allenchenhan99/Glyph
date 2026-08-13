@@ -182,9 +182,15 @@ function BlockMeta({ block }: { block: ReaderBlock }) {
       <span>p.{block.page_number}</span>
       <span>{block.block_type}</span>
       {block.section_path ? <span>{compactText(block.section_path, 42)}</span> : null}
-      <a href={block.page_image_url} rel="noreferrer" target="_blank">
-        View original page {block.page_number}
-      </a>
+      {block.page_image_url ? (
+        <a href={block.page_image_url} rel="noreferrer" target="_blank">
+          View original page {block.page_number}
+        </a>
+      ) : (
+        <span className="snapshot-page-unavailable">
+          Original page unavailable for this retained snapshot
+        </span>
+      )}
     </div>
   )
 }
@@ -209,9 +215,11 @@ function BlockContent({ block, side }: { block: ReaderBlock; side: 'source' | 't
     return (
       <div className="visual-reference">
         <p>{text}</p>
-        <a href={block.page_image_url} rel="noreferrer" target="_blank">
-          View original page {block.page_number}
-        </a>
+        {block.page_image_url ? (
+          <a href={block.page_image_url} rel="noreferrer" target="_blank">
+            View original page {block.page_number}
+          </a>
+        ) : null}
       </div>
     )
   }

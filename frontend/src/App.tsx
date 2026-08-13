@@ -266,14 +266,19 @@ export function App() {
 
   async function handleContractEvidence(blockId: string) {
     if (!activeDocument || !contractState.contract) return
+    const request = beginContractAuxRequest(activeDocument.id)
     try {
-      setReader(
-        await getReader(activeDocument.id, contractState.contract.source_content_hash)
+      const payload = await getReader(
+        activeDocument.id,
+        contractState.contract.source_content_hash
       )
+      if (!isCurrentContractAuxRequest(request)) return
+      setReader(payload)
       dispatchContract({ type: 'openReader', blockId })
       setReaderReturnSurface('contract')
       setSurface('reader')
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       console.error(error)
       setNotice({
         kind: 'error',
@@ -284,12 +289,14 @@ export function App() {
 
   async function handleContractMapNode(nodeId: string) {
     if (!activeDocument || !contractState.selectedItemId) return
+    const request = beginContractAuxRequest(activeDocument.id)
     const returnItemId = contractState.selectedItemId
     try {
       if (!contractState.contract) return
       const map = await getResearchMapVersion(
         contractState.contract.research_map_version_id
       )
+      if (!isCurrentContractAuxRequest(request)) return
       dispatchMap({ type: 'resetWorkspace' })
       dispatchMap({ type: 'mapLoaded', map })
       const linkedNodeExists = map.nodes.some((node) => node.id === nodeId)
@@ -306,6 +313,7 @@ export function App() {
       setMapReturnContractItemId(returnItemId)
       setSurface('map')
     } catch (error) {
+      if (!isCurrentContractAuxRequest(request)) return
       console.error(error)
       setNotice({
         kind: 'error',
@@ -543,9 +551,34 @@ export function App() {
           contract: refreshedContract
         })
       }
-      await refreshDocuments()
     } catch (error) {
       console.error(error)
+      if (activeDocumentId.current === contract.document_id) {
+        dispatchContract({
+          type: 'contractFailed',
+          documentId: contract.document_id,
+          message:
+            'Readiness could not be verified after saving the decision. Reload the Implementation Contract before implementation.'
+        })
+      }
+    }
+    await refreshDocuments()
+  }
+
+  async function handleReloadContract() {
+    const document = activeDocument
+    if (!document) return
+    dispatchContract({ type: 'contractLoading', documentId: document.id })
+    try {
+      const contract = await getActiveImplementationContract(document.id)
+      dispatchContract({ type: 'contractLoaded', documentId: document.id, contract })
+    } catch (error) {
+      console.error(error)
+      dispatchContract({
+        type: 'contractFailed',
+        documentId: document.id,
+        message: errorMessage(error, 'Could not reload the Implementation Contract.')
+      })
     }
   }
 
@@ -652,7 +685,10 @@ export function App() {
                       aria-label={`Implementation Contract status for ${document.title}`}
                     >
                       <span>
-                        {contractReadinessLabel(document.implementation_contract.readiness)} ·{' '}
+                        {activeDocumentId.current === document.id &&
+                        contractState.loadStatus !== 'ready'
+                          ? 'Readiness unverified'
+                          : contractReadinessLabel(document.implementation_contract.readiness)} ·{' '}
                         {document.implementation_contract.blocker_count} blocker
                         {document.implementation_contract.blocker_count === 1 ? '' : 's'}
                       </span>
@@ -794,6 +830,7 @@ export function App() {
             loadStatus={contractState.loadStatus}
             job={contractState.job}
             notice={contractState.notice}
+            onRetry={() => void handleReloadContract()}
           />
         )
       ) : null}
@@ -891,11 +928,13 @@ function contractReadinessLabel(
 function ContractWorkspaceState({
   loadStatus,
   job,
-  notice
+  notice,
+  onRetry
 }: {
   loadStatus: 'idle' | 'loading' | 'absent' | 'ready' | 'error'
   job: ImplementationContractJob | null
   notice: Notice
+  onRetry: () => void
 }) {
   const generationActive = job?.status === 'queued' || job?.status === 'running'
   return (
@@ -930,6 +969,11 @@ function ContractWorkspaceState({
         >
           {notice.message}
         </p>
+      ) : null}
+      {loadStatus === 'error' ? (
+        <button type="button" onClick={onRetry}>
+          Reload Implementation Contract
+        </button>
       ) : null}
     </section>
   )

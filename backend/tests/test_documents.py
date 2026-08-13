@@ -70,7 +70,10 @@ def test_changed_source_is_marked_stale_without_deleting_reader_data(
 
     assert catalog_document["status"] == "stale"
     assert stale_reader["document"]["status"] == "stale"
-    assert stale_reader["blocks"] == original_reader["blocks"]
+    original_without_page_links = [
+        {**block, "page_image_url": None} for block in original_reader["blocks"]
+    ]
+    assert stale_reader["blocks"] == original_without_page_links
     with client.app.state.session_factory() as session:
         document = session.get(Document, document_id)
         assert document is not None
@@ -117,6 +120,27 @@ def test_reader_can_load_an_exact_retained_source_snapshot(tmp_path, monkeypatch
         "Current replacement content" not in block["source_text"]
         for block in response.json()["blocks"]
     )
+    assert all(block["page_image_url"] is None for block in response.json()["blocks"])
+
+
+def test_page_image_rejects_an_obsolete_source_snapshot_hash(tmp_path, monkeypatch):
+    book = tmp_path / "book"
+    book.mkdir()
+    source = book / "sample.pdf"
+    source.write_text("# Current\n\nCurrent content.")
+    monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
+    monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
+    client = TestClient(create_app())
+    document_id = client.get("/api/documents").json()[0]["id"]
+
+    response = client.get(
+        f"/api/documents/{document_id}/pages/1/image",
+        params={"source_content_hash": "b" * 64},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Original page snapshot is unavailable"
 
 
 def test_missing_source_is_retained_and_restored_using_hash_state(

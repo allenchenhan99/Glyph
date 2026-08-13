@@ -113,6 +113,22 @@ describe('Reader', () => {
     expect(within(figureRow).getByText('Figure 1.1 Payoff diagram')).toBeInTheDocument()
   })
 
+  it('labels retained text snapshots when an exact original page is unavailable', () => {
+    render(
+      <Reader
+        payload={{
+          ...payload,
+          blocks: [{ ...payload.blocks[0], page_image_url: null }]
+        }}
+      />
+    )
+
+    expect(screen.queryByRole('link', { name: 'View original page 1' })).not.toBeInTheDocument()
+    expect(
+      screen.getAllByText('Original page unavailable for this retained snapshot')
+    ).toHaveLength(2)
+  })
+
   it('renders every supplied block so variable-height rows cannot skip content', () => {
     const manyBlocks: ReaderPayload = {
       ...payload,

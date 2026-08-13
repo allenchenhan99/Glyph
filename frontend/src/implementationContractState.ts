@@ -265,10 +265,11 @@ function savedResolution(
   if (!item) return state
   return {
     ...state,
+    loadStatus: 'loading',
     contract: replaceItem(state.contract, applyResolution(item, action.resolution, true)),
     pendingResolution: null,
     contractRefreshNonce: state.contractRefreshNonce + 1,
-    notice: { kind: 'status', message: 'Decision saved.' }
+    notice: { kind: 'status', message: 'Decision saved. Verifying readiness.' }
   }
 }
 

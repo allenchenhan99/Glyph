@@ -366,6 +366,8 @@ def get_reader(
     document, sections, section_by_id, blocks, summary = load_reader_parts(
         session, document_id, source_content_hash
     )
+    snapshot_hash = source_content_hash or document.processed_content_hash
+    exact_page_available = snapshot_hash == document.content_hash
     section_block_counts = {
         section.id: sum(1 for block in blocks if block.section_id == section.id)
         for section in sections
@@ -381,7 +383,11 @@ def get_reader(
                 source_text=block.source_text,
                 translated_text=block.translated_text,
                 formula_latex=block.formula_latex,
-                page_image_url=f"/api/documents/{document.id}/pages/{block.page_number}/image",
+                page_image_url=(
+                    f"/api/documents/{document.id}/pages/{block.page_number}/image"
+                    if exact_page_available
+                    else None
+                ),
                 section_path=section_by_id[block.section_id].path
                 if block.section_id in section_by_id
                 else None,
@@ -430,10 +436,18 @@ def get_page_image(
     page_number: int,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
+    source_content_hash: Annotated[
+        str | None,
+        Query(pattern="^[0-9a-f]{64}$"),
+    ] = None,
 ) -> FileResponse:
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    if source_content_hash is not None and source_content_hash != document.content_hash:
+        raise HTTPException(
+            status_code=409, detail="Original page snapshot is unavailable"
+        )
     source_path = require_source_path(document)
     if document.file_type in {"png", "jpg", "jpeg"}:
         return FileResponse(source_path)

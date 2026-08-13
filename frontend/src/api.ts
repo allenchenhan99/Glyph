@@ -385,7 +385,7 @@ function isReaderBlock(value: unknown): boolean {
     isString(value.source_text) &&
     isString(value.translated_text) &&
     isNullableString(value.formula_latex) &&
-    isString(value.page_image_url) &&
+    isNullableString(value.page_image_url) &&
     isNullableString(value.section_path) &&
     isNumber(value.confidence)
   )

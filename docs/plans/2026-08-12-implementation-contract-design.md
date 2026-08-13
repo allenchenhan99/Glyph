@@ -202,7 +202,7 @@ The Research Map adds `Build Implementation Contract`. The Library displays cont
 2. The center column runs a bounded fifteen-minute guided review and also exposes a structured item list.
 3. The right Evidence & Decision Inspector shows verbatim evidence, translated Reader context, origin, derivation rationale, effective value, history, and resolution controls.
 
-Selection is shared among Contract, Research Map, and Reader. Historical evidence deep links load the Contract's exact retained Reader source snapshot and exact Research Map version, then focus the persisted block; returning restores the selected contract item.
+Selection is shared among Contract, Research Map, and Reader. Historical evidence deep links load the Contract's exact retained Reader text snapshot and exact Research Map version, then focus the persisted block; returning restores the selected contract item. Because this milestone does not version source binaries, an old text snapshot whose source hash differs from the current file disables its original-page link and explains that the exact page is unavailable. It must never substitute the current file's page.
 
 ### Guided review
 
