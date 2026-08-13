@@ -1,3 +1,4 @@
+import base64
 import subprocess
 from pathlib import Path
 
@@ -146,8 +147,12 @@ def test_page_image_rejects_an_obsolete_source_snapshot_hash(tmp_path, monkeypat
 def test_page_image_url_becomes_invalid_when_source_changes(tmp_path, monkeypatch):
     book = tmp_path / "book"
     book.mkdir()
-    source = book / "sample.pdf"
-    source.write_text("# Original\n\nOriginal source page.")
+    source = book / "sample.png"
+    source.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+    )
     monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
     monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
@@ -159,7 +164,7 @@ def test_page_image_url_becomes_invalid_when_source_changes(tmp_path, monkeypatc
     ]["page_image_url"]
     assert old_page_url is not None and "source_content_hash=" in old_page_url
 
-    source.write_text("# Revised\n\nA different current source page.")
+    source.write_bytes(b"\x89PNG\r\n\x1a\nchanged source bytes")
     response = client.get(old_page_url)
 
     assert response.status_code == 409
