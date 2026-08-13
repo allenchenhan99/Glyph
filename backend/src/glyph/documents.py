@@ -9,12 +9,17 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from glyph.config import Settings
+from glyph.contract_schemas import ImplementationContractLibrarySummaryOut
+from glyph.implementation_contracts import (
+    ImplementationContractLibrarySummaryView,
+    load_implementation_contract_library_summaries,
+)
 from glyph.models import Block, Document, Section, Summary
 from glyph.pipeline import (
     ProcessingConflictError,
@@ -187,6 +192,7 @@ def discover_book_documents(settings: Settings, session: Session) -> list[Docume
 def document_to_out(
     document: Document,
     research_map: ResearchMapLibrarySummaryView | None = None,
+    implementation_contract: ImplementationContractLibrarySummaryView | None = None,
 ) -> DocumentOut:
     return DocumentOut(
         id=document.id,
@@ -196,6 +202,13 @@ def document_to_out(
         research_map=(
             ResearchMapLibrarySummaryOut.model_validate(research_map)
             if research_map is not None
+            else None
+        ),
+        implementation_contract=(
+            ImplementationContractLibrarySummaryOut.model_validate(
+                implementation_contract
+            )
+            if implementation_contract is not None
             else None
         ),
     )
@@ -228,7 +241,11 @@ def section_to_out(
     )
 
 
-def load_reader_parts(session: Session, document_id: str):
+def load_reader_parts(
+    session: Session,
+    document_id: str,
+    source_content_hash: str | None = None,
+):
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -238,11 +255,12 @@ def load_reader_parts(session: Session, document_id: str):
         .order_by(Section.order_index)
     ).all()
     section_by_id = {section.id: section for section in sections}
+    snapshot_hash = source_content_hash or document.processed_content_hash
     blocks = session.scalars(
         select(Block)
         .where(
             Block.document_id == document_id,
-            Block.source_content_hash == document.processed_content_hash,
+            Block.source_content_hash == snapshot_hash,
         )
         .order_by(Block.order_index)
     ).all()
@@ -272,8 +290,16 @@ def list_documents(
         )
     session.flush()
     summaries = load_research_map_library_summaries(session, documents)
+    contract_summaries = load_implementation_contract_library_summaries(
+        session, documents
+    )
     return [
-        document_to_out(document, summaries.get(document.id)) for document in documents
+        document_to_out(
+            document,
+            summaries.get(document.id),
+            contract_summaries.get(document.id),
+        )
+        for document in documents
     ]
 
 
@@ -332,9 +358,19 @@ def get_job_route(
 def get_reader(
     document_id: str,
     session: Annotated[Session, Depends(get_session)],
+    source_content_hash: Annotated[
+        str | None,
+        Query(pattern="^[0-9a-f]{64}$"),
+    ] = None,
 ) -> ReaderOut:
     document, sections, section_by_id, blocks, summary = load_reader_parts(
-        session, document_id
+        session, document_id, source_content_hash
+    )
+    snapshot_hash = source_content_hash or document.processed_content_hash
+    source_path = Path(document.source_path)
+    current_source_hash = compute_hash(source_path) if source_path.is_file() else None
+    exact_page_available = (
+        snapshot_hash is not None and snapshot_hash == current_source_hash
     )
     section_block_counts = {
         section.id: sum(1 for block in blocks if block.section_id == section.id)
@@ -351,7 +387,12 @@ def get_reader(
                 source_text=block.source_text,
                 translated_text=block.translated_text,
                 formula_latex=block.formula_latex,
-                page_image_url=f"/api/documents/{document.id}/pages/{block.page_number}/image",
+                page_image_url=(
+                    f"/api/documents/{document.id}/pages/{block.page_number}/image"
+                    f"?source_content_hash={snapshot_hash}"
+                    if exact_page_available
+                    else None
+                ),
                 section_path=section_by_id[block.section_id].path
                 if block.section_id in section_by_id
                 else None,
@@ -400,11 +441,20 @@ def get_page_image(
     page_number: int,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
+    source_content_hash: Annotated[
+        str | None,
+        Query(pattern="^[0-9a-f]{64}$"),
+    ] = None,
 ) -> FileResponse:
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     source_path = require_source_path(document)
+    current_source_hash = compute_hash(source_path)
+    if source_content_hash is not None and source_content_hash != current_source_hash:
+        raise HTTPException(
+            status_code=409, detail="Original page snapshot is unavailable"
+        )
     if document.file_type in {"png", "jpg", "jpeg"}:
         return FileResponse(source_path)
     if document.file_type != "pdf":
@@ -417,7 +467,7 @@ def get_page_image(
 
     page_dir = settings.data_dir / "page-images" / document.id
     page_dir.mkdir(parents=True, exist_ok=True)
-    output_prefix = page_dir / (f"page-{page_number:04d}-{document.content_hash[:16]}")
+    output_prefix = page_dir / (f"page-{page_number:04d}-{current_source_hash[:16]}")
     image_path = output_prefix.with_suffix(".png")
     if not image_path.exists():
         try:

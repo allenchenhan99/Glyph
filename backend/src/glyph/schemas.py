@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
+from glyph.contract_schemas import ImplementationContractLibrarySummaryOut
 from glyph.research_schemas import ResearchMapLibrarySummaryOut
 
 
@@ -11,6 +12,7 @@ class DocumentOut(BaseModel):
     file_type: str
     status: str
     research_map: ResearchMapLibrarySummaryOut | None = None
+    implementation_contract: ImplementationContractLibrarySummaryOut | None = None
 
 
 class JobOut(BaseModel):
@@ -30,7 +32,7 @@ class BlockOut(BaseModel):
     source_text: str
     translated_text: str
     formula_latex: str | None = None
-    page_image_url: str
+    page_image_url: str | None
     section_path: str | None = None
     confidence: float
 

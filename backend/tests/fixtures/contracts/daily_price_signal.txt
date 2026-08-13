@@ -1,0 +1,13 @@
+DAILY PRICE SIGNAL
+Thesis: Short-horizon price continuation persists after controlling for broad market moves.
+Data: We use split-adjusted daily closing prices and daily total returns for liquid US common stocks from 2005 through 2022.
+Fields: The implementation requires adjusted close, total return, trading date, share code, and twenty-day median dollar volume.
+Availability: A closing price is usable only after that trading session closes.
+Formation: The signal observed at a close first enters positions at the next business-day open.
+Universe: Each date keeps US common stocks whose twenty-day median dollar volume exceeds ten million dollars.
+Signal: The score is the product of one plus each daily return over the prior twenty business days, minus one.
+Direction: Higher trailing returns receive larger long scores and lower trailing returns receive larger short scores.
+Portfolio: We equally weight the top and bottom quintiles, rebalance every five business days, and hold for five business days.
+Evaluation: We report the gross long-short raw return and a heteroskedasticity-consistent t-statistic.
+Friction: Every entry and exit pays ten basis points, and turnover is measured on each rebalance date.
+Risk: Prices and returns must be split-adjusted before the signal is calculated.

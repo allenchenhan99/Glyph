@@ -113,6 +113,22 @@ describe('Reader', () => {
     expect(within(figureRow).getByText('Figure 1.1 Payoff diagram')).toBeInTheDocument()
   })
 
+  it('labels retained text snapshots when an exact original page is unavailable', () => {
+    render(
+      <Reader
+        payload={{
+          ...payload,
+          blocks: [{ ...payload.blocks[0], page_image_url: null }]
+        }}
+      />
+    )
+
+    expect(screen.queryByRole('link', { name: 'View original page 1' })).not.toBeInTheDocument()
+    expect(
+      screen.getAllByText('Original page unavailable for this retained snapshot')
+    ).toHaveLength(2)
+  })
+
   it('renders every supplied block so variable-height rows cannot skip content', () => {
     const manyBlocks: ReaderPayload = {
       ...payload,
@@ -157,6 +173,7 @@ describe('Reader', () => {
         payload={payload}
         focusBlockId="block-2"
         citingNodes={[{ id: 'node-1', title: 'Primary result' }]}
+        citationSource="Map"
         onReturnToMap={onReturnToMap}
       />
     )
@@ -164,9 +181,25 @@ describe('Reader', () => {
     const focused = screen.getByTestId('reader-row-block-2')
     expect(focused).toHaveFocus()
     expect(focused).toHaveAttribute('aria-current', 'location')
-    expect(within(focused).getByText('Cited by Primary result')).toBeInTheDocument()
+    expect(within(focused).getByText('Map citation · Primary result')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
     expect(onReturnToMap).toHaveBeenCalledTimes(1)
+  })
+
+  it('distinguishes Contract citation context from Map citation context', () => {
+    render(
+      <Reader
+        payload={payload}
+        focusBlockId="block-2"
+        citingNodes={[{ id: 'item-1', title: 'signal formula' }]}
+        citationSource="Contract"
+      />
+    )
+
+    const citations = within(screen.getByTestId('reader-row-block-2')).getByLabelText(
+      'Contract citations'
+    )
+    expect(citations).toHaveTextContent('Contract citation · signal formula')
   })
 })

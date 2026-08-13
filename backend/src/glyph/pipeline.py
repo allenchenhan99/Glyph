@@ -16,6 +16,7 @@ from glyph.config import Settings
 from glyph.models import (
     Block,
     Document,
+    ImplementationContractEvidence,
     Page,
     ProcessingJob,
     ResearchEvidence,
@@ -142,11 +143,17 @@ def replace_reader_snapshot(session: Session, document: Document, ocr_pages, par
 
 
 def clear_document_outputs(session: Session, document_id: str) -> None:
-    cited_block_ids = (
+    research_cited_block_ids = (
         select(ResearchEvidence.block_id)
         .join(Block, ResearchEvidence.block_id == Block.id)
         .where(Block.document_id == document_id)
     )
+    contract_cited_block_ids = (
+        select(ImplementationContractEvidence.block_id)
+        .join(Block, ImplementationContractEvidence.block_id == Block.id)
+        .where(Block.document_id == document_id)
+    )
+    cited_block_ids = research_cited_block_ids.union(contract_cited_block_ids)
     session.execute(
         update(Block)
         .where(Block.document_id == document_id, Block.id.in_(cited_block_ids))

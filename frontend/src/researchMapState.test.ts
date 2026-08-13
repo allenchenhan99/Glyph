@@ -87,7 +87,7 @@ describe('researchMapReducer', () => {
     expect(ready.loadStatus).toBe('ready')
     expect(ready.selectedNodeId).toBe('node-1')
     expect(ready.mapWarnings).toEqual({ partial: true, stale: true })
-    expect(ready.mode).toBe('map')
+    expect(ready).not.toHaveProperty('mode')
   })
 
   it('models queued, running, completed, and failed job states without duplicate refreshes', () => {
@@ -186,7 +186,7 @@ describe('researchMapReducer', () => {
     expect(state.notice).toBeNull()
   })
 
-  it('commits a server review and preserves map context through Reader mode', () => {
+  it('commits a server review and preserves map context through a Reader round trip', () => {
     let state = researchMapReducer(initialResearchMapState, { type: 'mapLoaded', map })
     state = researchMapReducer(state, { type: 'openInspector' })
     state = researchMapReducer(state, {
@@ -203,13 +203,11 @@ describe('researchMapReducer', () => {
     })
     state = researchMapReducer(state, { type: 'openReader', blockId: 'block-1' })
 
-    expect(state.mode).toBe('reader')
     expect(state.readerFocusBlockId).toBe('block-1')
     expect(state.selectedNodeId).toBe('node-1')
     expect(state.inspectorOpen).toBe(true)
 
     state = researchMapReducer(state, { type: 'returnToMap' })
-    expect(state.mode).toBe('map')
     expect(state.readerFocusBlockId).toBeNull()
     expect(state.map?.nodes[0].review?.id).toBe('server-review')
     expect(state.map?.reviewed_core_nodes).toBe(1)

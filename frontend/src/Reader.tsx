@@ -18,15 +18,22 @@ type ReaderProps = {
   focusBlockId?: string | null
   citingNodes?: Array<{ id: string; title: string }>
   onReturnToMap?: () => void
+  onReturn?: () => void
+  returnLabel?: string
+  citationSource?: 'Map' | 'Contract'
 }
 
 export function Reader({
   payload,
   focusBlockId = null,
   citingNodes = [],
-  onReturnToMap
+  onReturnToMap,
+  onReturn,
+  returnLabel = 'Research Map',
+  citationSource
 }: ReaderProps) {
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null)
+  const returnAction = onReturn ?? onReturnToMap
 
   const firstBlockBySectionPath = useMemo(() => {
     const targets = new Map<string, string>()
@@ -72,9 +79,9 @@ export function Reader({
             <h2>{payload.document.title}</h2>
           </div>
           <div className="reader-header-actions">
-            {onReturnToMap ? (
-              <button type="button" className="text-button" onClick={onReturnToMap}>
-                <ArrowLeft aria-hidden="true" size={16} /> Return to Research Map
+            {returnAction ? (
+              <button type="button" className="text-button" onClick={returnAction}>
+                <ArrowLeft aria-hidden="true" size={16} /> Return to {returnLabel}
               </button>
             ) : null}
             <div className="reader-stat">
@@ -102,6 +109,7 @@ export function Reader({
               hovered={hoveredBlockId === block.id}
               focused={focusBlockId === block.id}
               citingNodes={focusBlockId === block.id ? citingNodes : []}
+              citationSource={citationSource}
               key={block.id}
               onHover={setHoveredBlockId}
             />
@@ -117,10 +125,11 @@ type ReaderRowProps = {
   hovered: boolean
   focused: boolean
   citingNodes: Array<{ id: string; title: string }>
+  citationSource?: 'Map' | 'Contract'
   onHover: (blockId: string | null) => void
 }
 
-function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowProps) {
+function ReaderRow({ block, hovered, focused, citingNodes, citationSource, onHover }: ReaderRowProps) {
   return (
     <article
       className="block-grid reader-row"
@@ -135,7 +144,7 @@ function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowP
       onMouseLeave={() => onHover(null)}
     >
       <div className="source-cell">
-        {citingNodes.length ? <CitationBadges nodes={citingNodes} /> : null}
+        {citingNodes.length ? <CitationBadges nodes={citingNodes} source={citationSource} /> : null}
         <BlockMeta block={block} />
         <BlockContent block={block} side="source" />
       </div>
@@ -147,10 +156,20 @@ function ReaderRow({ block, hovered, focused, citingNodes, onHover }: ReaderRowP
   )
 }
 
-function CitationBadges({ nodes }: { nodes: Array<{ id: string; title: string }> }) {
+function CitationBadges({
+  nodes,
+  source
+}: {
+  nodes: Array<{ id: string; title: string }>
+  source?: 'Map' | 'Contract'
+}) {
   return (
-    <div className="citation-badges" aria-label="Research Map citations">
-      {nodes.map((node) => <span key={node.id}>Cited by {node.title}</span>)}
+    <div className="citation-badges" aria-label={`${source ?? 'Research Map'} citations`}>
+      {nodes.map((node) => (
+        <span key={node.id}>
+          {source ? `${source} citation · ` : 'Cited by '}{node.title}
+        </span>
+      ))}
     </div>
   )
 }
@@ -163,9 +182,15 @@ function BlockMeta({ block }: { block: ReaderBlock }) {
       <span>p.{block.page_number}</span>
       <span>{block.block_type}</span>
       {block.section_path ? <span>{compactText(block.section_path, 42)}</span> : null}
-      <a href={block.page_image_url} rel="noreferrer" target="_blank">
-        View original page {block.page_number}
-      </a>
+      {block.page_image_url ? (
+        <a href={block.page_image_url} rel="noreferrer" target="_blank">
+          View original page {block.page_number}
+        </a>
+      ) : (
+        <span className="snapshot-page-unavailable">
+          Original page unavailable for this retained snapshot
+        </span>
+      )}
     </div>
   )
 }
@@ -190,9 +215,11 @@ function BlockContent({ block, side }: { block: ReaderBlock; side: 'source' | 't
     return (
       <div className="visual-reference">
         <p>{text}</p>
-        <a href={block.page_image_url} rel="noreferrer" target="_blank">
-          View original page {block.page_number}
-        </a>
+        {block.page_image_url ? (
+          <a href={block.page_image_url} rel="noreferrer" target="_blank">
+            View original page {block.page_number}
+          </a>
+        ) : null}
       </div>
     )
   }
