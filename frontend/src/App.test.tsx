@@ -641,6 +641,72 @@ describe('App', () => {
     expect(await screen.findByText('尚未可實作')).toBeInTheDocument()
   })
 
+  it('uses the authoritative open Contract when the post-save Library refresh fails', async () => {
+    const readyContract = {
+      ...implementationContract,
+      readiness: 'implementation_ready' as const,
+      issues: []
+    }
+    const questionedResolution = {
+      id: 'resolution-questioned',
+      item_id: 'item-thesis',
+      revision_number: 2,
+      supersedes_resolution_id: 'resolution-confirmed',
+      status: 'questioned' as const,
+      resolved_value: null,
+      reason: 'Needs another review.',
+      based_on_contract_version_id: implementationContract.id,
+      based_on_item_signature: 'b'.repeat(64),
+      request_id: 'contract-resolution-1',
+      resolved_at: '2026-08-13T00:00:00Z'
+    }
+    const blockedContract = {
+      ...readyContract,
+      readiness: 'blocked' as const,
+      items: readyContract.items.map((item) =>
+        item.id === 'item-thesis'
+          ? { ...item, resolution: questionedResolution }
+          : item
+      ),
+      issues: [
+        {
+          id: 'issue-questioned',
+          item_id: 'item-thesis',
+          code: 'questioned_item',
+          severity: 'error' as const,
+          message: 'A reviewed implementation value is still questioned.'
+        }
+      ]
+    }
+    const readyDocument = {
+      id: 'doc-1',
+      title: 'sample.pdf',
+      file_type: 'pdf',
+      status: 'completed' as const,
+      implementation_contract: {
+        ...implementationContractSummary,
+        readiness: 'implementation_ready' as const,
+        blocker_count: 0
+      }
+    }
+    mockedListDocuments
+      .mockResolvedValueOnce([readyDocument])
+      .mockRejectedValueOnce(new ApiError(503, 'Library refresh unavailable.'))
+    mockedGetActiveImplementationContract
+      .mockResolvedValueOnce(readyContract)
+      .mockResolvedValueOnce(blockedContract)
+    mockedResolveImplementationContractItem.mockResolvedValue(questionedResolution)
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume Contract for sample.pdf' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Question supported item' }))
+
+    expect(await screen.findByText('尚未可實作')).toBeInTheDocument()
+    const library = screen.getByLabelText('Implementation Contract status for sample.pdf')
+    expect(library).toHaveTextContent('Blocked · 1 blocker')
+    expect(library).not.toHaveTextContent('Implementation ready')
+  })
+
   it('opens a linked Research Map node from Contract and returns to the same Contract item', async () => {
     mockedListDocuments.mockResolvedValue([
       {

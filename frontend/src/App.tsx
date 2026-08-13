@@ -40,6 +40,7 @@ import type {
   ContractResolution,
   ContractResolutionStatus,
   ContractValue,
+  ImplementationContract as ImplementationContractRecord,
   ImplementationContractJob,
   ImplementationContractDiff,
   ImplementationContractVersion,
@@ -680,27 +681,12 @@ export function App() {
                     </div>
                   ) : null}
                   {document.implementation_contract ? (
-                    <div
-                      className="library-map-summary"
-                      aria-label={`Implementation Contract status for ${document.title}`}
-                    >
-                      <span>
-                        {activeDocumentId.current === document.id &&
-                        contractState.loadStatus !== 'ready'
-                          ? 'Readiness unverified'
-                          : contractReadinessLabel(document.implementation_contract.readiness)} ·{' '}
-                        {document.implementation_contract.blocker_count} blocker
-                        {document.implementation_contract.blocker_count === 1 ? '' : 's'}
-                      </span>
-                      <span>
-                        {document.implementation_contract.reviewed_count} /{' '}
-                        {document.implementation_contract.total_reviewable_count} reviewed
-                      </span>
-                      <span>
-                        {document.implementation_contract.is_stale ? 'Stale' : 'Current'} ·{' '}
-                        {document.implementation_contract.generation_status}
-                      </span>
-                    </div>
+                    <LibraryContractSummary
+                      document={document}
+                      isActive={activeDocumentId.current === document.id}
+                      loadStatus={contractState.loadStatus}
+                      contract={contractState.contract}
+                    />
                   ) : null}
                 </div>
               </div>
@@ -923,6 +909,66 @@ function contractReadinessLabel(
     case 'implementation_ready':
       return 'Implementation ready'
   }
+}
+
+function LibraryContractSummary({
+  document,
+  isActive,
+  loadStatus,
+  contract
+}: {
+  document: DocumentRecord
+  isActive: boolean
+  loadStatus: 'idle' | 'loading' | 'absent' | 'ready' | 'error'
+  contract: ImplementationContractRecord | null
+}) {
+  const listed = document.implementation_contract
+  if (!listed) return null
+  if (isActive && loadStatus !== 'ready') {
+    return (
+      <div
+        className="library-map-summary"
+        aria-label={`Implementation Contract status for ${document.title}`}
+      >
+        <span>Readiness unverified · blocker count unverified</span>
+        <span>Review progress unverified</span>
+        <span>Contract refresh required</span>
+      </div>
+    )
+  }
+  const authoritative =
+    isActive && contract?.document_id === document.id && contract.is_active
+      ? contract
+      : null
+  const blockerCount = authoritative
+    ? authoritative.issues.filter((issue) => issue.severity === 'error').length
+    : listed.blocker_count
+  const reviewedCount = authoritative
+    ? authoritative.items.filter((item) => item.resolution !== null).length
+    : listed.reviewed_count
+  const totalReviewableCount = authoritative
+    ? authoritative.items.length
+    : listed.total_reviewable_count
+  const readiness = authoritative?.readiness ?? listed.readiness
+  const isStale = authoritative?.is_stale ?? listed.is_stale
+  const generationStatus = authoritative?.status ?? listed.generation_status
+  return (
+    <div
+      className="library-map-summary"
+      aria-label={`Implementation Contract status for ${document.title}`}
+    >
+      <span>
+        {contractReadinessLabel(readiness)} · {blockerCount} blocker
+        {blockerCount === 1 ? '' : 's'}
+      </span>
+      <span>
+        {reviewedCount} / {totalReviewableCount} reviewed
+      </span>
+      <span>
+        {isStale ? 'Stale' : 'Current'} · {generationStatus}
+      </span>
+    </div>
+  )
 }
 
 function ContractWorkspaceState({

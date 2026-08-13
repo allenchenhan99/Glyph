@@ -521,6 +521,19 @@ def append_contract_resolution(
             )
         return _resolution_view(existing)
 
+    has_descendant = session.scalar(
+        select(ImplementationContractVersion.id)
+        .where(
+            ImplementationContractVersion.document_id == version.document_id,
+            ImplementationContractVersion.previous_version_id == version.id,
+        )
+        .limit(1)
+    )
+    if has_descendant is not None:
+        raise ImplementationContractConflictError(
+            "Cannot resolve a historical Contract item after a descendant version exists"
+        )
+
     lineage_resolutions = _load_resolution_models(
         session,
         _lineage_version_ids(session, version),

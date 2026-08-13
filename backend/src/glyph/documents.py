@@ -367,7 +367,11 @@ def get_reader(
         session, document_id, source_content_hash
     )
     snapshot_hash = source_content_hash or document.processed_content_hash
-    exact_page_available = snapshot_hash == document.content_hash
+    source_path = Path(document.source_path)
+    current_source_hash = compute_hash(source_path) if source_path.is_file() else None
+    exact_page_available = (
+        snapshot_hash is not None and snapshot_hash == current_source_hash
+    )
     section_block_counts = {
         section.id: sum(1 for block in blocks if block.section_id == section.id)
         for section in sections
@@ -385,6 +389,7 @@ def get_reader(
                 formula_latex=block.formula_latex,
                 page_image_url=(
                     f"/api/documents/{document.id}/pages/{block.page_number}/image"
+                    f"?source_content_hash={snapshot_hash}"
                     if exact_page_available
                     else None
                 ),
@@ -444,11 +449,12 @@ def get_page_image(
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
-    if source_content_hash is not None and source_content_hash != document.content_hash:
+    source_path = require_source_path(document)
+    current_source_hash = compute_hash(source_path)
+    if source_content_hash is not None and source_content_hash != current_source_hash:
         raise HTTPException(
             status_code=409, detail="Original page snapshot is unavailable"
         )
-    source_path = require_source_path(document)
     if document.file_type in {"png", "jpg", "jpeg"}:
         return FileResponse(source_path)
     if document.file_type != "pdf":
@@ -461,7 +467,7 @@ def get_page_image(
 
     page_dir = settings.data_dir / "page-images" / document.id
     page_dir.mkdir(parents=True, exist_ok=True)
-    output_prefix = page_dir / (f"page-{page_number:04d}-{document.content_hash[:16]}")
+    output_prefix = page_dir / (f"page-{page_number:04d}-{current_source_hash[:16]}")
     image_path = output_prefix.with_suffix(".png")
     if not image_path.exists():
         try:

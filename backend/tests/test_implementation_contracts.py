@@ -1228,6 +1228,59 @@ def test_new_resolution_continues_carried_revision_and_supersession_chain(
     assert loaded.resolution is not None and loaded.resolution.id == revised.id
 
 
+def test_historical_ancestor_cannot_fork_a_descendant_resolution_chain(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    first = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    first_item = _view_item(first, "required_dataset.1")
+    append_contract_resolution(
+        session,
+        first_item.id,
+        status="confirmed",
+        based_on_item_signature=first_item.item_signature,
+        value=None,
+        reason=None,
+        request_id="ancestor-revision-1",
+    )
+    session.commit()
+    second = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    ).generate(document.id)
+    second_item = _view_item(second, first_item.item_key)
+    append_contract_resolution(
+        session,
+        second_item.id,
+        status="questioned",
+        based_on_item_signature=second_item.item_signature,
+        value=None,
+        reason="Descendant revision.",
+        request_id="descendant-revision-2",
+    )
+    session.commit()
+
+    with pytest.raises(
+        ImplementationContractConflictError,
+        match="historical Contract item",
+    ):
+        append_contract_resolution(
+            session,
+            first_item.id,
+            status="questioned",
+            based_on_item_signature=first_item.item_signature,
+            value=None,
+            reason="Must not fork the descendant chain.",
+            request_id="ancestor-fork",
+        )
+
+    loaded = _view_item(
+        load_implementation_contract(session, second.id), first_item.item_key
+    )
+    assert [value.revision_number for value in loaded.resolution_history] == [1, 2]
+
+
 def test_resolution_never_applies_to_a_different_item_with_same_signature(
     contract_database_factory,
 ) -> None:
@@ -1345,7 +1398,7 @@ def test_newer_resolution_never_applies_retroactively_to_ancestor(
     )
 
 
-def test_late_ancestor_resolutions_refresh_identical_descendant_readiness(
+def test_all_historical_ancestor_items_are_read_only_after_regeneration(
     contract_database_factory,
 ) -> None:
     session, document, _map_version = contract_database_factory()
@@ -1358,22 +1411,25 @@ def test_late_ancestor_resolutions_refresh_identical_descendant_readiness(
     assert second.readiness == "review_needed"
 
     for index, item in enumerate(first.items):
-        append_contract_resolution(
-            session,
-            item.id,
-            status="confirmed",
-            based_on_item_signature=item.item_signature,
-            value=None,
-            reason=None,
-            request_id=f"late-ancestor-{index}",
-        )
+        with pytest.raises(
+            ImplementationContractConflictError,
+            match="historical Contract item",
+        ):
+            append_contract_resolution(
+                session,
+                item.id,
+                status="confirmed",
+                based_on_item_signature=item.item_signature,
+                value=None,
+                reason=None,
+                request_id=f"late-ancestor-{index}",
+            )
 
     descendant = load_implementation_contract(session, second.id)
     descendant_model = session.get(ImplementationContractVersion, second.id)
-    assert descendant.readiness == "implementation_ready"
-    assert descendant.issues == ()
+    assert descendant.readiness == "review_needed"
     assert descendant_model is not None
-    assert descendant_model.readiness == "implementation_ready"
+    assert descendant_model.readiness == "review_needed"
 
 
 def test_diff_classifies_all_change_types_in_stable_contract_order(

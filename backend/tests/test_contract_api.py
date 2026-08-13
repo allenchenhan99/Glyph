@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -376,6 +376,48 @@ def test_diff_activation_and_error_boundaries(contract_api):
         ).status_code
         == 404
     )
+
+
+def test_concurrent_ancestor_and_descendant_decisions_cannot_fork_history(
+    contract_api,
+):
+    app, client, _executor, document_id, map_id, _source_dir = contract_api
+    first_id = _generate_contract(app, document_id, map_id)
+    second_id = _generate_contract(app, document_id, map_id)
+    first = client.get(f"/api/implementation-contracts/{first_id}").json()
+    second = client.get(f"/api/implementation-contracts/{second_id}").json()
+    first_item = first["items"][0]
+    second_item = next(
+        item for item in second["items"] if item["item_key"] == first_item["item_key"]
+    )
+
+    def decide(item: dict, request_id: str):
+        with TestClient(app) as request_client:
+            return request_client.patch(
+                f"/api/implementation-contract-items/{item['id']}/resolution",
+                json={
+                    "request_id": request_id,
+                    "status": "confirmed",
+                    "based_on_item_signature": item["item_signature"],
+                },
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        ancestor_future = executor.submit(decide, first_item, "ancestor-race")
+        descendant_future = executor.submit(decide, second_item, "descendant-race")
+        ancestor = ancestor_future.result(timeout=5)
+        descendant = descendant_future.result(timeout=5)
+
+    assert ancestor.status_code == 409
+    assert "historical Contract item" in ancestor.json()["detail"]
+    assert descendant.status_code == 200
+    loaded = client.get(f"/api/implementation-contracts/{second_id}").json()
+    loaded_item = next(
+        item for item in loaded["items"] if item["item_key"] == first_item["item_key"]
+    )
+    assert [
+        entry["revision_number"] for entry in loaded_item["resolution_history"]
+    ] == [1]
 
 
 def test_document_list_batches_contract_summary_without_n_plus_one(contract_api):

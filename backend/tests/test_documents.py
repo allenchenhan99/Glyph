@@ -143,6 +143,29 @@ def test_page_image_rejects_an_obsolete_source_snapshot_hash(tmp_path, monkeypat
     assert response.json()["detail"] == "Original page snapshot is unavailable"
 
 
+def test_page_image_url_becomes_invalid_when_source_changes(tmp_path, monkeypatch):
+    book = tmp_path / "book"
+    book.mkdir()
+    source = book / "sample.pdf"
+    source.write_text("# Original\n\nOriginal source page.")
+    monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
+    monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
+    client = TestClient(create_app())
+    document_id = client.get("/api/documents").json()[0]["id"]
+    client.post(f"/api/documents/{document_id}/process")
+    old_page_url = client.get(f"/api/documents/{document_id}/reader").json()["blocks"][
+        0
+    ]["page_image_url"]
+    assert old_page_url is not None and "source_content_hash=" in old_page_url
+
+    source.write_text("# Revised\n\nA different current source page.")
+    response = client.get(old_page_url)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Original page snapshot is unavailable"
+
+
 def test_missing_source_is_retained_and_restored_using_hash_state(
     tmp_path, monkeypatch
 ):
