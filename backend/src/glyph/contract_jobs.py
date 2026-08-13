@@ -11,7 +11,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from glyph.contract_ai import ImplementationContractProvider
-from glyph.implementation_contracts import ImplementationContractService
+from glyph.implementation_contracts import (
+    ImplementationContractService,
+    contract_mutation_coordinator,
+)
 from glyph.models import Block, Document, ImplementationContractJob, ResearchMapVersion
 
 logger = logging.getLogger(__name__)
@@ -98,40 +101,41 @@ def execute_implementation_contract_job(
             if stage_observer is not None:
                 stage_observer(stage, progress)
 
-        try:
-            version = ImplementationContractService(
-                session,
-                provider_factory(),
-                stage_callback=record_stage,
-            ).generate(
-                job.document_id,
-                job.requested_research_map_version_id,
-            )
-            job.contract_version_id = version.id
-            job.status = "completed"
-            job.stage = "completed"
-            job.progress = 100
-            job.error_message = None
-            job.lease_token = None
-            session.commit()
-        except Exception:  # noqa: BLE001 - providers are an external boundary
-            document_id = job.document_id
-            session.rollback()
-            logger.exception(
-                "Implementation Contract job failed",
-                extra={"job_id": job_id, "document_id": document_id},
-            )
-            failed = session.get(ImplementationContractJob, job_id)
-            if failed is not None:
-                failed.status = "failed"
-                failed.stage = "failed"
-                failed.progress = 100
-                failed.error_message = (
-                    "Implementation Contract generation failed. "
-                    "Check the server logs for details."
+        with contract_mutation_coordinator.acquire(job.document_id):
+            try:
+                version = ImplementationContractService(
+                    session,
+                    provider_factory(),
+                    stage_callback=record_stage,
+                ).generate(
+                    job.document_id,
+                    job.requested_research_map_version_id,
                 )
-                failed.lease_token = None
+                job.contract_version_id = version.id
+                job.status = "completed"
+                job.stage = "completed"
+                job.progress = 100
+                job.error_message = None
+                job.lease_token = None
                 session.commit()
+            except Exception:  # noqa: BLE001 - providers are an external boundary
+                document_id = job.document_id
+                session.rollback()
+                logger.exception(
+                    "Implementation Contract job failed",
+                    extra={"job_id": job_id, "document_id": document_id},
+                )
+                failed = session.get(ImplementationContractJob, job_id)
+                if failed is not None:
+                    failed.status = "failed"
+                    failed.stage = "failed"
+                    failed.progress = 100
+                    failed.error_message = (
+                        "Implementation Contract generation failed. "
+                        "Check the server logs for details."
+                    )
+                    failed.lease_token = None
+                    session.commit()
     finally:
         session.close()
 

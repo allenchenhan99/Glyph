@@ -22,6 +22,7 @@ from glyph.implementation_contracts import (
     ImplementationContractConflictError,
     ImplementationContractNotFoundError,
     ImplementationContractService,
+    contract_mutation_coordinator,
     load_implementation_contract,
 )
 from glyph.models import Document, ImplementationContractVersion
@@ -151,11 +152,12 @@ def _generate_contract(
     map_version_id: str | None,
 ) -> int:
     with factory() as session:
-        contract = ImplementationContractService(
-            session,
-            create_implementation_contract_provider(settings),
-        ).generate(document_id, map_version_id)
-        session.commit()
+        with contract_mutation_coordinator.acquire(document_id):
+            contract = ImplementationContractService(
+                session,
+                create_implementation_contract_provider(settings),
+            ).generate(document_id, map_version_id)
+            session.commit()
         payload = {
             "contract_version_id": contract.id,
             "document_id": contract.document_id,

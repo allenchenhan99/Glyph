@@ -16,6 +16,7 @@ import type {
 type ContractInspectorProps = {
   item: ImplementationContractItem
   pending?: boolean
+  readOnly?: boolean
   notice: ContractNotice
   onClose: () => void
   onOpenReader: (blockId: string) => void
@@ -31,6 +32,7 @@ type ContractInspectorProps = {
 export function ContractInspector({
   item,
   pending = false,
+  readOnly = false,
   notice,
   onClose,
   onOpenReader,
@@ -229,7 +231,7 @@ export function ContractInspector({
       {isMissing ? (
         <fieldset
           className="contract-decision-form"
-          disabled={pending}
+          disabled={pending || readOnly}
           aria-describedby={describedBy}
         >
           <legend>Resolve missing implementation value</legend>
@@ -287,19 +289,11 @@ export function ContractInspector({
               </button>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="reader-link"
-            onClick={() => onOpenReader(item.evidence[0]?.block_id ?? '')}
-            aria-label="Open Reader to investigate"
-          >
-            <BookOpenText aria-hidden="true" size={16} /> Open Reader to investigate
-          </button>
         </fieldset>
       ) : (
         <fieldset
           className="contract-decision-form"
-          disabled={pending}
+          disabled={pending || readOnly}
           aria-describedby={describedBy}
         >
           <legend>Review supported implementation value</legend>
@@ -345,6 +339,17 @@ export function ContractInspector({
           </div>
         </fieldset>
       )}
+      {isMissing ? (
+        <button
+          type="button"
+          className="reader-link"
+          disabled={pending}
+          onClick={() => onOpenReader(item.evidence[0]?.block_id ?? '')}
+          aria-label="Open Reader to investigate"
+        >
+          <BookOpenText aria-hidden="true" size={16} /> Open Reader to investigate
+        </button>
+      ) : null}
     </aside>
   )
 }

@@ -31,11 +31,16 @@ from glyph.implementation_contracts import (
     ImplementationContractNotFoundError,
     activate_implementation_contract,
     append_contract_resolution,
+    contract_mutation_coordinator,
     diff_implementation_contracts,
     list_implementation_contract_versions,
     load_implementation_contract,
 )
-from glyph.models import ImplementationContractJob, ImplementationContractVersion
+from glyph.models import (
+    ImplementationContractItem,
+    ImplementationContractJob,
+    ImplementationContractVersion,
+)
 
 router = APIRouter(prefix="/api", tags=["implementation-contract"])
 
@@ -185,20 +190,41 @@ def resolve_contract_item(
     session: Annotated[Session, Depends(get_session)],
 ):
     try:
+        document_id = session.scalar(
+            select(ImplementationContractVersion.document_id)
+            .join(
+                ImplementationContractItem,
+                ImplementationContractItem.contract_version_id
+                == ImplementationContractVersion.id,
+            )
+            .where(ImplementationContractItem.id == item_id)
+        )
+        if document_id is None:
+            raise ImplementationContractNotFoundError(
+                "Implementation Contract item not found"
+            )
+        session.rollback()
         value = (
             decode_contract_value(payload.resolved_value.model_dump(mode="json"))
             if payload.resolved_value is not None
             else None
         )
-        return append_contract_resolution(
-            session,
-            item_id,
-            status=payload.status,
-            based_on_item_signature=payload.based_on_item_signature,
-            value=value,
-            reason=payload.reason,
-            request_id=payload.request_id,
-        )
+        with contract_mutation_coordinator.acquire(document_id):
+            try:
+                resolution = append_contract_resolution(
+                    session,
+                    item_id,
+                    status=payload.status,
+                    based_on_item_signature=payload.based_on_item_signature,
+                    value=value,
+                    reason=payload.reason,
+                    request_id=payload.request_id,
+                )
+                session.commit()
+                return resolution
+            except Exception:
+                session.rollback()
+                raise
     except ImplementationContractNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ImplementationContractConflictError as exc:
@@ -216,7 +242,21 @@ def activate_contract_version(
     session: Annotated[Session, Depends(get_session)],
 ):
     try:
-        return activate_implementation_contract(session, version_id)
+        target = session.get(ImplementationContractVersion, version_id)
+        if target is None:
+            raise ImplementationContractNotFoundError(
+                "Implementation Contract not found"
+            )
+        document_id = target.document_id
+        session.rollback()
+        with contract_mutation_coordinator.acquire(document_id):
+            try:
+                contract = activate_implementation_contract(session, version_id)
+                session.commit()
+                return contract
+            except Exception:
+                session.rollback()
+                raise
     except ImplementationContractNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ImplementationContractConflictError as exc:

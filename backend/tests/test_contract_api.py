@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,10 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from glyph.contract_ai import MockImplementationContractProvider
+from glyph.contract_jobs import (
+    enqueue_implementation_contract_job,
+    execute_implementation_contract_job,
+)
 from glyph.implementation_contracts import ImplementationContractService
 from glyph.main import create_app
 from glyph.models import (
@@ -409,7 +414,7 @@ def test_concurrent_ancestor_and_descendant_decisions_cannot_fork_history(
         descendant = descendant_future.result(timeout=5)
 
     assert ancestor.status_code == 409
-    assert "historical Contract item" in ancestor.json()["detail"]
+    assert "active lineage tip" in ancestor.json()["detail"]
     assert descendant.status_code == 200
     loaded = client.get(f"/api/implementation-contracts/{second_id}").json()
     loaded_item = next(
@@ -418,6 +423,81 @@ def test_concurrent_ancestor_and_descendant_decisions_cannot_fork_history(
     assert [
         entry["revision_number"] for entry in loaded_item["resolution_history"]
     ] == [1]
+
+
+def test_only_the_active_lineage_tip_accepts_decisions(contract_api):
+    app, client, _executor, document_id, map_id, _source_dir = contract_api
+    first_id = _generate_contract(app, document_id, map_id)
+    second_id = _generate_contract(app, document_id, map_id)
+    client.post(f"/api/implementation-contracts/{first_id}/activate")
+    first = client.get(f"/api/implementation-contracts/{first_id}").json()
+    second = client.get(f"/api/implementation-contracts/{second_id}").json()
+
+    assert first["is_active"] is True and first["is_resolvable"] is False
+    assert second["is_active"] is False and second["is_resolvable"] is False
+    for request_id, contract in (("active-ancestor", first), ("inactive-tip", second)):
+        item = contract["items"][0]
+        response = client.patch(
+            f"/api/implementation-contract-items/{item['id']}/resolution",
+            json={
+                "request_id": request_id,
+                "status": "confirmed",
+                "based_on_item_signature": item["item_signature"],
+            },
+        )
+        assert response.status_code == 409
+        assert "active lineage tip" in response.json()["detail"]
+
+
+def test_generation_serializes_a_racing_resolution_before_tip_mutation(contract_api):
+    app, client, _executor, document_id, map_id, _source_dir = contract_api
+    first_id = _generate_contract(app, document_id, map_id)
+    first = client.get(f"/api/implementation-contracts/{first_id}").json()
+    item = first["items"][0]
+    with app.state.session_factory.begin() as session:
+        job = enqueue_implementation_contract_job(session, document_id, map_id)
+
+    generation_locked = Event()
+    release_generation = Event()
+
+    def observe(stage: str, _progress: float) -> None:
+        if stage == "persist_and_activate":
+            generation_locked.set()
+            assert release_generation.wait(timeout=5)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        generation = executor.submit(
+            execute_implementation_contract_job,
+            app.state.session_factory,
+            job.id,
+            MockImplementationContractProvider,
+            observe,
+        )
+        assert generation_locked.wait(timeout=5)
+        decision = executor.submit(
+            client.patch,
+            f"/api/implementation-contract-items/{item['id']}/resolution",
+            json={
+                "request_id": "generation-resolution-race",
+                "status": "confirmed",
+                "based_on_item_signature": item["item_signature"],
+            },
+        )
+        assert decision.done() is False
+        release_generation.set()
+        generation.result(timeout=5)
+        decision_response = decision.result(timeout=5)
+
+    assert decision_response.status_code == 409
+    assert "active lineage tip" in decision_response.json()["detail"]
+    active = client.get(f"/api/documents/{document_id}/implementation-contract").json()
+    assert active["previous_version_id"] == first_id
+    active_item = next(
+        candidate
+        for candidate in active["items"]
+        if candidate["item_key"] == item["item_key"]
+    )
+    assert active_item["resolution_history"] == []
 
 
 def test_document_list_batches_contract_summary_without_n_plus_one(contract_api):

@@ -1263,7 +1263,7 @@ def test_historical_ancestor_cannot_fork_a_descendant_resolution_chain(
 
     with pytest.raises(
         ImplementationContractConflictError,
-        match="historical Contract item",
+        match="active lineage tip",
     ):
         append_contract_resolution(
             session,
@@ -1413,7 +1413,7 @@ def test_all_historical_ancestor_items_are_read_only_after_regeneration(
     for index, item in enumerate(first.items):
         with pytest.raises(
             ImplementationContractConflictError,
-            match="historical Contract item",
+            match="active lineage tip",
         ):
             append_contract_resolution(
                 session,
@@ -1491,6 +1491,8 @@ def test_list_and_activate_historical_versions_preserve_stale_truth(
     assert activated.is_current is False
     assert activated.is_stale is True
     assert load_implementation_contract(session, second.id).is_active is False
+    assert activated.is_resolvable is False
+    assert load_implementation_contract(session, second.id).is_resolvable is False
 
     first_model = session.get(ImplementationContractVersion, first.id)
     assert first_model is not None
@@ -1500,6 +1502,69 @@ def test_list_and_activate_historical_versions_preserve_stale_truth(
         ImplementationContractConflictError, match="complete or partial"
     ):
         activate_implementation_contract(session, first.id)
+
+
+def test_generation_continues_the_lineage_tip_after_historical_activation(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    first = service.generate(document.id)
+    session.commit()
+    second = service.generate(document.id)
+    session.commit()
+    activate_implementation_contract(session, first.id)
+    session.commit()
+
+    third = service.generate(document.id)
+
+    assert third.previous_version_id == second.id
+    versions = list_implementation_contract_versions(session, document.id)
+    assert sum(version.previous_version_id == first.id for version in versions) == 1
+
+
+def test_generation_rejects_a_forked_history_without_changing_active_version(
+    contract_database_factory,
+) -> None:
+    session, document, _map_version = contract_database_factory()
+    service = ImplementationContractService(
+        session, MockImplementationContractProvider()
+    )
+    first = service.generate(document.id)
+    session.commit()
+    second = service.generate(document.id)
+    session.commit()
+    second_model = session.get(ImplementationContractVersion, second.id)
+    assert second_model is not None
+    fork = ImplementationContractVersion(
+        id="manual-fork",
+        document_id=document.id,
+        research_map_version_id=second.research_map_version_id,
+        previous_version_id=first.id,
+        source_content_hash=second.source_content_hash,
+        research_map_signature=second.research_map_signature,
+        schema_version=second.schema_version,
+        provider="mock",
+        model_name=None,
+        status="complete",
+        readiness="review_needed",
+        is_active=False,
+        completed_at=second.completed_at,
+    )
+    session.add(fork)
+    session.commit()
+
+    with pytest.raises(
+        ImplementationContractConflictError,
+        match="multiple lineage tips",
+    ):
+        service.generate(document.id)
+
+    session.rollback()
+    assert session.get(ImplementationContractVersion, second.id).is_active is True
+    assert session.get(ImplementationContractVersion, fork.id).is_active is False
 
 
 def test_version_history_is_bounded_and_uses_constant_query_count(

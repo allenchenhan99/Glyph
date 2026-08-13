@@ -79,6 +79,7 @@ export const implementationContract = {
   status: 'partial',
   readiness: 'blocked',
   is_active: true,
+  is_resolvable: true,
   is_current: true,
   is_stale: false,
   created_at: '2026-08-12T12:00:00Z',

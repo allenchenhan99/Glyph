@@ -140,6 +140,11 @@ export function ImplementationContract({
             The source or Research Map changed. Rebuild before implementation.
           </p>
         ) : null}
+        {!contract.is_resolvable ? (
+          <p className="contract-stale-alert" role="alert">
+            This Contract is read-only. Activate the latest lineage version before recording decisions.
+          </p>
+        ) : null}
       </div>
 
       {notice && !inspectorOpen ? (
@@ -268,6 +273,7 @@ export function ImplementationContract({
           <ContractInspector
             item={selectedItem}
             pending={resolutionPending}
+            readOnly={!contract.is_resolvable}
             notice={notice}
             onClose={onCloseInspector}
             onOpenReader={onOpenReader}

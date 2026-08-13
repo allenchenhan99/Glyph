@@ -185,8 +185,9 @@ export function isImplementationContract(
   value: unknown
 ): value is ImplementationContract {
   return (
-    isExactRecord(value, [...contractBaseKeys, 'items', 'issues']) &&
+    isExactRecord(value, [...contractBaseKeys, 'is_resolvable', 'items', 'issues']) &&
     isContractBase(value) &&
+    isBoolean(value.is_resolvable) &&
     Array.isArray(value.items) &&
     value.items.every(isImplementationContractItem) &&
     Array.isArray(value.issues) &&

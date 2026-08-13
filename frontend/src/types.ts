@@ -425,6 +425,7 @@ export type ImplementationContract = {
   status: ContractGenerationStatus
   readiness: ContractReadiness
   is_active: boolean
+  is_resolvable: boolean
   is_current: boolean
   is_stale: boolean
   created_at: string
@@ -435,7 +436,7 @@ export type ImplementationContract = {
 
 export type ImplementationContractVersion = Omit<
   ImplementationContract,
-  'items' | 'issues'
+  'items' | 'issues' | 'is_resolvable'
 >
 
 export type ImplementationContractJob = {

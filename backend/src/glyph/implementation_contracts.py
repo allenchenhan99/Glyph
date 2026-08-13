@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from threading import Lock
 from uuid import uuid4
 
 from sqlalchemy import delete, func, select, tuple_
@@ -63,6 +65,36 @@ class ImplementationContractConflictError(RuntimeError):
 
 class ImplementationContractNotFoundError(LookupError):
     """Raised when a requested contract input or version does not exist."""
+
+
+class ContractMutationCoordinator:
+    """Serialize version mutations for one document in the supported process."""
+
+    def __init__(self) -> None:
+        self._guard = Lock()
+        self._document_locks: dict[str, tuple[Lock, int]] = {}
+
+    @contextmanager
+    def acquire(self, document_id: str) -> Iterator[None]:
+        with self._guard:
+            document_lock, users = self._document_locks.get(document_id, (Lock(), 0))
+            self._document_locks[document_id] = (document_lock, users + 1)
+        try:
+            with document_lock:
+                yield
+        finally:
+            with self._guard:
+                current_lock, current_users = self._document_locks[document_id]
+                if current_users == 1:
+                    del self._document_locks[document_id]
+                else:
+                    self._document_locks[document_id] = (
+                        current_lock,
+                        current_users - 1,
+                    )
+
+
+contract_mutation_coordinator = ContractMutationCoordinator()
 
 
 @dataclass(frozen=True)
@@ -141,6 +173,7 @@ class ImplementationContractView:
     status: str
     readiness: str
     is_active: bool
+    is_resolvable: bool
     is_current: bool
     is_stale: bool
     created_at: datetime
@@ -360,12 +393,24 @@ def _persist_and_activate(
     audit: ContractAuditResult,
     provider: ImplementationContractProvider,
 ) -> str:
-    previous = session.scalar(
+    existing_versions = session.scalars(
         select(ImplementationContractVersion).where(
             ImplementationContractVersion.document_id == context.document.id,
-            ImplementationContractVersion.is_active.is_(True),
         )
-    )
+    ).all()
+    parent_ids = {
+        version.previous_version_id
+        for version in existing_versions
+        if version.previous_version_id is not None
+    }
+    lineage_tips = [
+        version for version in existing_versions if version.id not in parent_ids
+    ]
+    if len(lineage_tips) > 1:
+        raise ImplementationContractConflictError(
+            "Implementation Contract history has multiple lineage tips"
+        )
+    previous = lineage_tips[0] if lineage_tips else None
     with session.begin_nested():
         version = ImplementationContractVersion(
             id=str(uuid4()),
@@ -387,9 +432,9 @@ def _persist_and_activate(
         session.flush()
         _refresh_contract_audit(session, version)
         version.completed_at = datetime.now(UTC)
-        if previous is not None:
-            previous.is_active = False
-            session.flush()
+        for active_version in existing_versions:
+            active_version.is_active = False
+        session.flush()
         version.is_active = True
         session.flush()
     return version.id
@@ -521,17 +566,9 @@ def append_contract_resolution(
             )
         return _resolution_view(existing)
 
-    has_descendant = session.scalar(
-        select(ImplementationContractVersion.id)
-        .where(
-            ImplementationContractVersion.document_id == version.document_id,
-            ImplementationContractVersion.previous_version_id == version.id,
-        )
-        .limit(1)
-    )
-    if has_descendant is not None:
+    if not _is_resolvable_contract(session, version):
         raise ImplementationContractConflictError(
-            "Cannot resolve a historical Contract item after a descendant version exists"
+            "Only the active lineage tip accepts Contract decisions"
         )
 
     lineage_resolutions = _load_resolution_models(
@@ -823,9 +860,10 @@ def load_implementation_contract(
         if issue.item_id is not None:
             issues_by_item[issue.item_id].append(issue)
 
+    lineage_version_ids, has_descendant = _lineage_state(session, version)
     resolution_rows = _load_resolution_models(
         session,
-        _lineage_version_ids(session, version),
+        lineage_version_ids,
         item_models,
     )
     history_by_identity: defaultdict[tuple[str, str], list[ContractResolutionView]] = (
@@ -860,6 +898,11 @@ def load_implementation_contract(
         == _research_map_signature(session, map_version)
     )
     is_current = reader_is_current and map_is_current
+    is_resolvable = (
+        version.is_active
+        and version.status in {"complete", "partial"}
+        and not has_descendant
+    )
     return ImplementationContractView(
         id=version.id,
         document_id=version.document_id,
@@ -873,12 +916,32 @@ def load_implementation_contract(
         status=version.status,
         readiness=version.readiness,
         is_active=version.is_active,
+        is_resolvable=is_resolvable,
         is_current=is_current,
         is_stale=not is_current,
         created_at=version.created_at,
         completed_at=version.completed_at,
         items=item_views,
         issues=issue_views,
+    )
+
+
+def _is_resolvable_contract(
+    session: Session,
+    version: ImplementationContractVersion,
+) -> bool:
+    if not version.is_active or version.status not in {"complete", "partial"}:
+        return False
+    return (
+        session.scalar(
+            select(ImplementationContractVersion.id)
+            .where(
+                ImplementationContractVersion.document_id == version.document_id,
+                ImplementationContractVersion.previous_version_id == version.id,
+            )
+            .limit(1)
+        )
+        is None
     )
 
 
@@ -1336,6 +1399,14 @@ def _lineage_version_ids(
     session: Session,
     version: ImplementationContractVersion,
 ) -> set[str]:
+    lineage, _has_descendant = _lineage_state(session, version)
+    return lineage
+
+
+def _lineage_state(
+    session: Session,
+    version: ImplementationContractVersion,
+) -> tuple[set[str], bool]:
     rows = session.execute(
         select(
             ImplementationContractVersion.id,
@@ -1352,7 +1423,9 @@ def _lineage_version_ids(
             )
         lineage.add(current_id)
         current_id = previous_by_id.get(current_id)
-    return lineage
+    return lineage, any(
+        previous_id == version.id for previous_id in previous_by_id.values()
+    )
 
 
 def _resolution_view(

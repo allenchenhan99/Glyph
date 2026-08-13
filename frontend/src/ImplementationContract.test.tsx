@@ -79,6 +79,24 @@ describe('ImplementationContract', () => {
     )
   })
 
+  it('makes a non-resolvable Contract visibly read-only and sends no decision', () => {
+    const onResolve = vi.fn()
+    render(
+      <ImplementationContract
+        {...defaultProps}
+        contract={{ ...implementationContract, is_resolvable: false }}
+        onResolve={onResolve}
+      />
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('read-only')
+    expect(screen.getByRole('button', { name: 'Save human decision' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Keep item blocked' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save human decision' }))
+    expect(onResolve).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: 'Open Reader to investigate' })).toBeEnabled()
+  })
+
   it('uses keyboard-reachable controls and supports controlled inspector collapse', () => {
     const onCloseInspector = vi.fn()
     const onOpenInspector = vi.fn()

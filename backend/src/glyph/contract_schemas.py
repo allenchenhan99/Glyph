@@ -217,6 +217,7 @@ class ImplementationContractOut(AttributeModel):
     status: ContractGenerationStatus
     readiness: ContractReadiness
     is_active: bool
+    is_resolvable: bool
     is_current: bool
     is_stale: bool
     created_at: ApiDateTime
