@@ -1,4 +1,3 @@
-import base64
 import subprocess
 from pathlib import Path
 
@@ -148,17 +147,28 @@ def test_page_image_url_becomes_invalid_when_source_changes(tmp_path, monkeypatc
     book = tmp_path / "book"
     book.mkdir()
     source = book / "sample.png"
-    source.write_bytes(
-        base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-        )
-    )
+    source.write_bytes(b"original source bytes")
     monkeypatch.setenv("GLYPH_BOOK_DIR", str(book))
     monkeypatch.setenv("GLYPH_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    with client.app.state.session_factory.begin() as session:
+        document = session.get(Document, document_id)
+        assert document is not None
+        document.status = "completed"
+        document.processed_content_hash = document.content_hash
+        session.add(
+            Block(
+                id="current-page-block",
+                document_id=document_id,
+                source_content_hash=document.content_hash,
+                order_index=0,
+                page_number=1,
+                block_type="paragraph",
+                source_text="Current page content.",
+                translated_text="目前頁面內容。",
+            )
+        )
     old_page_url = client.get(f"/api/documents/{document_id}/reader").json()["blocks"][
         0
     ]["page_image_url"]
