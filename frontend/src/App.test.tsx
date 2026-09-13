@@ -276,6 +276,7 @@ describe('App', () => {
     const focused = await screen.findByTestId('reader-row-block-0')
     expect(focused).toHaveFocus()
     expect(focused).toHaveTextContent('Map citation · Research question')
+    expect(mockedGetReader).toHaveBeenLastCalledWith('doc-1', researchMapFixture.source_content_hash)
 
     fireEvent.click(screen.getByRole('button', { name: 'Return to Research Map' }))
     expect(await screen.findByLabelText('Evidence Inspector for Research question')).toBeInTheDocument()
