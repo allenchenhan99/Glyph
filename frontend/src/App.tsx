@@ -1,3 +1,4 @@
+import { SettingsPage } from './pages/SettingsPage'
 import { BookOpen, FileSearch, FileUp, Loader2, Play, RefreshCw } from 'lucide-react'
 import { useEffect, useReducer, useRef, useState } from 'react'
 
@@ -57,6 +58,7 @@ type ReaderReturnSurface = 'map' | 'contract' | null
 export function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const [loadState, setLoadState] = useState<LoadState>('idle')
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
   const [reader, setReader] = useState<ReaderPayload | null>(null)
   const [activeDocument, setActiveDocument] = useState<DocumentRecord | null>(null)
@@ -632,6 +634,9 @@ export function App() {
             <h1 id="library-title">Reading workspace</h1>
           </div>
           <div className="toolbar">
+            <button type="button" className="icon-button" aria-expanded={settingsOpen} aria-controls="translation-settings" onClick={() => setSettingsOpen(!settingsOpen)}>
+              {settingsOpen ? 'Close settings' : 'Translation settings'}
+            </button>
             <label className="icon-button">
               <FileUp aria-hidden="true" size={18} />
               <span>Upload</span>
@@ -648,6 +653,8 @@ export function App() {
             </button>
           </div>
         </div>
+
+        {settingsOpen && <div id="translation-settings"><SettingsPage /></div>}
 
         {notice ? (
           <p

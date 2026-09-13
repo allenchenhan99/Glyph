@@ -193,17 +193,32 @@ def looks_like_heading(text: str) -> bool:
 
 
 def create_ai_adapter(settings: Settings):
-    if settings.ai_mode == "mock":
+    """Translation adapter; Research Maps and Contracts keep using ai_mode."""
+    from glyph.config import resolve_translation_settings
+
+    translation = resolve_translation_settings(settings)
+    if translation.provider == "orcarouter":
+        from glyph.orcarouter import OrcaRouterAdapter
+
+        return OrcaRouterAdapter(
+            api_key=translation.api_key,
+            model=translation.model,
+            batch_size=min(settings.cli_batch_size, 8),
+            timeout_seconds=settings.cli_timeout_seconds,
+            concurrency=1,
+            cache_dir=settings.data_dir / "ai-cache",
+        )
+    if translation.provider == "mock":
         return MockAiAdapter()
-    if settings.ai_mode in {"claude_cli", "codex_cli"}:
+    if translation.provider in {"claude_cli", "codex_cli"}:
         from glyph.cli_ai import CliAiAdapter
 
         return CliAiAdapter(
-            provider=settings.ai_mode.removesuffix("_cli"),
-            model=settings.cli_model,
+            provider=translation.provider.removesuffix("_cli"),
+            model=translation.model or None,
             batch_size=settings.cli_batch_size,
             timeout_seconds=settings.cli_timeout_seconds,
             concurrency=settings.cli_concurrency,
             cache_dir=settings.data_dir / "ai-cache",
         )
-    raise RuntimeError(f"Unknown AI mode: {settings.ai_mode}")
+    raise RuntimeError(f"Unknown AI mode: {translation.provider}")

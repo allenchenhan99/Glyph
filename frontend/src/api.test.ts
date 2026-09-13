@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getAiSettings,
+  updateAiSettings,
   activateImplementationContract,
   activateResearchMap,
   enqueueImplementationContract,
@@ -731,5 +733,27 @@ describe('Implementation Contract API contracts', () => {
     await expect(
       getImplementationContractExport('contract-1', 'json', 'en')
     ).rejects.toThrow('Unexpected API response shape')
+  })
+})
+
+
+describe('translation settings', () => {
+  it('validates the settings response and posts keys only in the body', async () => {
+    const payload = { provider: 'orcarouter', model: 'test/model', has_api_key: true, ocr_mode: 'mock' }
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(payload)))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getAiSettings()).resolves.toEqual(payload)
+    await expect(updateAiSettings({ provider: 'orcarouter', model: 'test/model', api_key: 'test-key' })).resolves.toEqual(payload)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/settings/ai', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'orcarouter', model: 'test/model', api_key: 'test-key' })
+    })
+  })
+
+  it('rejects an unknown provider instead of displaying an unusable form', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      provider: 'unknown', model: '', has_api_key: false, ocr_mode: 'mock'
+    }))))
+    await expect(getAiSettings()).rejects.toThrow('Unexpected API response shape')
   })
 })

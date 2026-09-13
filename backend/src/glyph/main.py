@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from glyph.config import get_settings
+from glyph.config import get_settings, resolve_translation_settings
 from glyph.contract_ai import create_implementation_contract_provider
 from glyph.contract_jobs import (
     ImplementationContractJobExecutor,
@@ -14,6 +14,7 @@ from glyph.contract_jobs import (
 from glyph.contract_routes import router as contract_router
 from glyph.database import create_session_factory
 from glyph.documents import router as documents_router
+from glyph.provider_settings import router as provider_settings_router
 from glyph.research_ai import create_research_map_provider
 from glyph.research_jobs import (
     ResearchMapJobExecutor,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router)
     app.include_router(research_router)
     app.include_router(contract_router)
+    app.include_router(provider_settings_router)
 
     @app.get("/api/health")
     def health() -> dict[str, str]:
@@ -73,6 +75,7 @@ def create_app() -> FastAPI:
             "data_dir": str(settings.data_dir),
             "ocr_mode": settings.ocr_mode,
             "ai_mode": settings.ai_mode,
+            "translation_provider": resolve_translation_settings(settings).provider,
         }
 
     return app

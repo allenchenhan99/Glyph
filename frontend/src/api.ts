@@ -640,3 +640,26 @@ function isResearchMapDiff(value: unknown): value is ResearchMapDiff {
     )
   )
 }
+
+export type AiProvider = 'claude_cli' | 'codex_cli' | 'orcarouter' | 'mock'
+export type AiSettings = {
+  provider: AiProvider
+  model: string
+  has_api_key: boolean
+  ocr_mode: string
+}
+
+function isAiSettings(value: unknown): value is AiSettings {
+  return isRecord(value) && ['claude_cli', 'codex_cli', 'orcarouter', 'mock'].includes(String(value.provider)) &&
+    typeof value.model === 'string' && typeof value.has_api_key === 'boolean' && typeof value.ocr_mode === 'string'
+}
+
+export function getAiSettings(): Promise<AiSettings> {
+  return fetchJson('/api/settings/ai', isAiSettings)
+}
+
+export function updateAiSettings(settings: { provider: AiProvider; model: string; api_key?: string }): Promise<AiSettings> {
+  return fetchJson('/api/settings/ai', isAiSettings, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings)
+  })
+}

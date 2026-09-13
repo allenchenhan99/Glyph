@@ -1,0 +1,21 @@
+.settings-page { max-width: 900px; margin: 0 auto; padding: clamp(24px, 5vw, 64px); }
+.settings-eyebrow { font-size: 11px; letter-spacing: .15em; color: #864127; }
+.settings-header h1 { font-family: Georgia, serif; font-weight: 400; font-size: clamp(30px, 4vw, 46px); margin: 12px 0; }
+.settings-header > p:last-child { color: #655f56; margin-bottom: 32px; }
+.settings-card { border: 1px solid #ded8cb; border-radius: 16px; padding: clamp(20px, 3vw, 32px); background: #fffdf8; }
+.settings-card fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-card legend { font-size: 18px; font-weight: 600; margin-bottom: 24px; }
+.settings-card label { display: block; margin: 20px 0 8px; font-size: 14px; font-weight: 600; }
+.settings-card input, .settings-card select { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #bdb6a9; border-radius: 7px; background: #fff; color: #29261f; font: inherit; }
+.settings-card :is(input, select, button, a):focus-visible { outline: 2px solid #93472d; outline-offset: 3px; }
+.settings-help, .settings-footnote p { color: #655f56; font-size: 13px; line-height: 1.65; }
+.settings-notice { background: #f2eee5; border-radius: 8px; margin-top: 24px; padding: 20px; font-size: 14px; line-height: 1.65; }
+.settings-links { display: flex; flex-wrap: wrap; gap: 16px; }
+.settings-links a { color: #864127; text-underline-offset: 3px; }
+.settings-actions { margin-top: 24px; }
+.settings-actions button { border: 0; border-radius: 7px; padding: 12px 20px; background: #87442e; color: white; font: inherit; cursor: pointer; }
+.settings-card fieldset:disabled { opacity: .6; }
+.settings-error { color: #a12828; }
+.settings-success { color: #356048; font-size: 14px; line-height: 1.6; }
+.settings-footnote { margin-top: 28px; }
+.settings-footnote h2 { font-size: 15px; }
