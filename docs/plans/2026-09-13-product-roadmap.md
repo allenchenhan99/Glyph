@@ -1,6 +1,6 @@
 # Glyph product milestones
 
-Status: active. Approved by the user on 2026-09-13; execute in order, record evidence before marking a milestone complete.
+Status: four milestones delivered. Approved by the user on 2026-09-13; acceptance evidence and delivery PRs are recorded below. The quality baseline explicitly records remaining product limitations; milestone completion does not imply every document format passes.
 
 ## Stage 1 — Reliable document processing (complete)
 
@@ -41,7 +41,9 @@ Validation on 2026-09-13: 528 backend tests passed (91.80% coverage), 164 fronte
 
 This phase also fixes a reproducible summary state-read race: completed jobs now resolve their published version directly, preventing an old active-version read from being paired with a newly completed job. A deterministic regression and 12 repeated API test runs passed. The cancellation UI test now models persistent server cancellation state across polls.
 
-## Stage 4 — Representative quality acceptance (verified; awaiting integration)
+## Stage 4 — Representative quality acceptance (complete)
+
+Delivery: [PR #13](https://github.com/allenchenhan99/Glyph/pull/13). The milestone delivers reproducible acceptance, a reviewed baseline, and regression checks. It does not claim that the reported extraction or citation-granularity failures are solved.
 
 - Maintain a small, licensed/public corpus covering text-backed, scanned, equation-heavy and table-heavy papers; keep large files outside git and record source/license/hash.
 - Measure extraction completeness, translation alignment, formula fidelity, evidence navigation and recovery behavior against explicit expected results.
@@ -54,4 +56,4 @@ Browser verification on a public-page derivative confirmed keyboard quotation na
 
 ## Delivery rules
 
-Use a focused branch/PR per milestone, preserve local/private artifacts, and run the repository gates before integration. The roadmap remains active until each acceptance criterion is met; implementation progress is not evidence of completion.
+Use a focused branch/PR per milestone, preserve local/private artifacts, and run the repository gates before integration. Completion requires acceptance evidence; implementation progress alone is insufficient. Further fixes should use the published baseline to demonstrate improvement without hiding existing failures.
