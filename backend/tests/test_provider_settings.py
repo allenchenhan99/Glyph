@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 from fastapi.testclient import TestClient
+from support import process_and_wait
 
 from glyph.ai import MockAiAdapter, create_ai_adapter
 from glyph.config import get_settings, resolve_translation_settings
@@ -232,7 +233,7 @@ def test_document_processing_uses_session_orcarouter_settings(tmp_path, monkeypa
         == 200
     )
     document_id = client.get("/api/documents").json()[0]["id"]
-    job = client.post(f"/api/documents/{document_id}/process").json()
+    job = process_and_wait(client, document_id)
     assert job["status"] == "completed", job
     reader = client.get(f"/api/documents/{document_id}/reader").json()
     assert any(block["translated_text"] == "會話翻譯" for block in reader["blocks"])
@@ -241,7 +242,7 @@ def test_document_processing_uses_session_orcarouter_settings(tmp_path, monkeypa
 
 def test_run_keeps_settings_captured_before_ocr(tmp_path, monkeypatch):
     import glyph.orcarouter as module
-    import glyph.pipeline as pipeline
+    import glyph.processing_jobs as jobs
     from glyph.ocr import OcrPage
 
     calls: list[bytes] = []
@@ -283,7 +284,7 @@ def test_run_keeps_settings_captured_before_ocr(tmp_path, monkeypatch):
                 OcrPage(page_number=1, text="# Title\n\nSome prose.", image_path=None)
             ]
 
-    monkeypatch.setattr(pipeline, "create_ocr_adapter", lambda settings: SlowOcr())
+    monkeypatch.setattr(jobs, "create_ocr_adapter", lambda settings: SlowOcr())
     assert (
         client.post(
             "/api/settings/ai",
@@ -296,7 +297,7 @@ def test_run_keeps_settings_captured_before_ocr(tmp_path, monkeypatch):
         == 200
     )
     document_id = client.get("/api/documents").json()[0]["id"]
-    job = client.post(f"/api/documents/{document_id}/process").json()
+    job = process_and_wait(client, document_id)
     assert job["status"] == "completed", job
     assert len(calls) == 1
     reader = client.get(f"/api/documents/{document_id}/reader").json()
@@ -313,6 +314,6 @@ def test_missing_session_key_fails_job_with_public_message(tmp_path, monkeypatch
     (tmp_path / "book" / "sample.pdf").write_text("# Title\n\nSome prose.")
     client = TestClient(app)
     document_id = client.get("/api/documents").json()[0]["id"]
-    job = client.post(f"/api/documents/{document_id}/process").json()
-    assert job["status"] == "failed"
-    assert "Settings" in job["error_message"]
+    response = client.post(f"/api/documents/{document_id}/process")
+    assert response.status_code == 422
+    assert "OrcaRouter" in response.json()["detail"]

@@ -1,6 +1,7 @@
 import hashlib
 
 from fastapi.testclient import TestClient
+from support import process_and_wait
 
 from glyph.main import create_app
 
@@ -20,7 +21,7 @@ def test_reader_payload_returns_aligned_blocks_sections_and_summary(
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
 
     reader_response = client.get(f"/api/documents/{document_id}/reader")
     sections_response = client.get(f"/api/documents/{document_id}/sections")

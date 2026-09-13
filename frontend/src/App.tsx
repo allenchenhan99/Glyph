@@ -1,5 +1,6 @@
+import { DocumentProcessing, useDocumentProcessing } from './DocumentProcessing'
 import { SettingsPage } from './pages/SettingsPage'
-import { BookOpen, FileSearch, FileUp, Loader2, Play, RefreshCw } from 'lucide-react'
+import { BookOpen, FileSearch, FileUp, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useReducer, useRef, useState } from 'react'
 
 import {
@@ -18,7 +19,6 @@ import {
   getResearchMapVersion,
   listDocuments,
   listImplementationContractVersions,
-  processDocument,
   resolveImplementationContractItem,
   reviewResearchNode,
   uploadDocument
@@ -57,6 +57,7 @@ type ReaderReturnSurface = 'map' | 'contract' | null
 
 export function App() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
+  const processing = useDocumentProcessing(refreshDocuments)
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
@@ -143,28 +144,6 @@ export function App() {
     } catch (error) {
       console.error(error)
       setNotice({ kind: 'error', message: errorMessage(error, 'Upload failed.') })
-    }
-  }
-
-  async function handleProcess(document: DocumentRecord) {
-    setNotice({ kind: 'status', message: `Processing ${document.title}` })
-    try {
-      const job = await processDocument(document.id)
-      await refreshDocuments()
-      if (job.status !== 'completed') {
-        setNotice({
-          kind: 'error',
-          message: job.error_message ?? `Processing failed for ${document.title}`
-        })
-        return
-      }
-      setNotice({ kind: 'status', message: `Processed ${document.title}` })
-    } catch (error) {
-      console.error(error)
-      setNotice({
-        kind: 'error',
-        message: errorMessage(error, `Processing failed for ${document.title}`)
-      })
     }
   }
 
@@ -647,7 +626,7 @@ export function App() {
                 onChange={(event) => void handleUpload(event.currentTarget.files?.[0])}
               />
             </label>
-            <button type="button" className="icon-button" onClick={() => void refreshDocuments()}>
+            <button type="button" className="icon-button" onClick={() => { void refreshDocuments(); void processing.reload() }}>
               <RefreshCw aria-hidden="true" size={18} />
               <span>Refresh</span>
             </button>
@@ -669,6 +648,11 @@ export function App() {
             <Loader2 aria-hidden="true" size={16} /> Loading documents
           </p>
         ) : null}
+
+        {processing.loadError && <div className="error-line" role="alert">
+          {processing.loadError}
+          <button type="button" className="icon-button secondary" onClick={() => void processing.reload()}>Retry loading jobs</button>
+        </div>}
 
         <div className="document-list" aria-label="Documents">
           {documents.map((document) => (
@@ -698,15 +682,7 @@ export function App() {
                 </div>
               </div>
               <div className="row-actions">
-                <button
-                  type="button"
-                  className="icon-button"
-                  onClick={() => void handleProcess(document)}
-                  aria-label={`Process ${document.title}`}
-                >
-                  <Play aria-hidden="true" size={16} />
-                  <span>Process</span>
-                </button>
+                <DocumentProcessing document={document} processing={processing} />
                 <button
                   type="button"
                   className="icon-button secondary"
@@ -880,9 +856,9 @@ function errorMessage(error: unknown, fallback: string): string {
 function documentStatusLabel(status: DocumentRecord['status']): string {
   switch (status) {
     case 'discovered':
-      return 'Ready to process'
+      return 'Not processed'
     case 'uploaded':
-      return 'Uploaded · ready to process'
+      return 'Uploaded · not processed'
     case 'processing':
       return 'Processing'
     case 'completed':

@@ -1,4 +1,5 @@
 import os
+import shlex
 import subprocess
 import sys
 
@@ -75,7 +76,10 @@ def test_unlimited_ocr_adapter_runs_configured_command_and_reads_markdown(tmp_pa
         ocr_mode="unlimited_ocr",
         ai_mode="mock",
         unlimited_ocr_repo=None,
-        unlimited_ocr_command=f"{sys.executable} {script} --input {{input}} --output_dir {{output_dir}}",
+        unlimited_ocr_command=(
+            f"{shlex.quote(sys.executable)} {shlex.quote(str(script))} "
+            "--input {input} --output_dir {output_dir}"
+        ),
     )
 
     pages = UnlimitedOcrAdapter(settings).extract_pages(source)
@@ -191,3 +195,42 @@ def test_unlimited_ocr_failure_does_not_expose_tool_output(tmp_path, monkeypatch
 
     assert str(error.value) == "Unlimited-OCR command failed with exit code 2"
     assert str(source) not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("scan.png", b"\x89PNG\r\n\x1a\n" + b"\x00" * 16),
+        ("photo.jpg", b"\xff\xd8\xff\xe0" + b"\x00" * 16),
+    ],
+)
+def test_mock_ocr_refuses_to_fabricate_text_for_real_images(tmp_path, name, content):
+    source = tmp_path / name
+    source.write_bytes(content)
+    with pytest.raises(OcrUnavailableError, match="OCR"):
+        MockOcrAdapter().extract_pages(source)
+
+
+def test_mock_ocr_refuses_scanned_pdf_without_extractable_text(tmp_path, monkeypatch):
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"%PDF-1.4\n\xff\xfe binary pdf")
+    monkeypatch.setattr("glyph.ocr.extract_text_backed_pdf_pages", lambda *a, **k: [])
+    with pytest.raises(OcrUnavailableError, match="OCR"):
+        MockOcrAdapter().extract_pages(source)
+
+
+def test_mock_ocr_reads_development_text_fixtures_but_not_empty_files(tmp_path):
+    fixture = tmp_path / "fixture.pdf"
+    fixture.write_text("# Heading\n\nBody.")
+    assert MockOcrAdapter().extract_pages(fixture)[0].text == "# Heading\n\nBody."
+    empty = tmp_path / "empty.pdf"
+    empty.write_text("")
+    with pytest.raises(OcrUnavailableError):
+        MockOcrAdapter().extract_pages(empty)
+
+
+def test_mock_ocr_rejects_unrecognized_binary_content(tmp_path):
+    damaged = tmp_path / "damaged.pdf"
+    damaged.write_bytes(b"\x00\x01garbage\xff\xfe")
+    with pytest.raises(OcrUnavailableError, match="not a readable"):
+        MockOcrAdapter().extract_pages(damaged)

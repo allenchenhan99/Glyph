@@ -252,3 +252,40 @@ def test_fatal_error_on_first_batch_stops_later_billable_calls(tmp_path):
     with pytest.raises(OrcaRouterError, match="HTTP 401"):
         ai.parse_translate_and_summarize([(1, "One.\n\nTwo.\n\nThree.")])
     assert len(calls) == 1
+
+
+def test_cancel_during_transport_retry_stops_further_attempts(tmp_path):
+    from glyph.cli_ai import TranslationCancelledError
+
+    cancelled = False
+
+    def handler(body: bytes, headers: dict[str, str]) -> TransportResponse:
+        nonlocal cancelled
+        cancelled = True
+        return TransportResponse(503, {}, b"")
+
+    ai = adapter(tmp_path, handler)
+    with pytest.raises(TranslationCancelledError):
+        ai.parse_translate_and_summarize(
+            [(1, "Prose.")], should_cancel=lambda: cancelled
+        )
+    assert len(ai.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "bad_key", ["abc\ndef", "abc\r\nAuthorization: x", "tab\tkey", "ключ", "a" * 5000]
+)
+def test_invalid_key_format_is_rejected_before_any_transport(tmp_path, bad_key):
+    calls: list[bytes] = []
+    with pytest.raises(OrcaRouterError) as error:
+        OrcaRouterAdapter(
+            api_key=bad_key,
+            model="m",
+            batch_size=1,
+            timeout_seconds=1,
+            transport=lambda body, headers, timeout: calls.append(body),  # type: ignore[arg-type,return-value]
+        )
+    assert calls == []
+    assert bad_key.strip() not in str(error.value)
+    assert "abc" not in str(error.value)
+    assert "key" in str(error.value).lower()

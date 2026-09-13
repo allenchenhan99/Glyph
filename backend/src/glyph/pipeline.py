@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
-from pathlib import Path
-from threading import Lock
 from uuid import uuid4
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
-from glyph.ai import ParsedBlock, create_ai_adapter
-from glyph.cli_ai import CliAiError
-from glyph.config import Settings
+from glyph.ai import ParsedBlock
 from glyph.models import (
     Block,
     Document,
@@ -23,92 +17,8 @@ from glyph.models import (
     Section,
     Summary,
 )
-from glyph.ocr import OcrUnavailableError, create_ocr_adapter
-from glyph.orcarouter import OrcaRouterError
 
 logger = logging.getLogger(__name__)
-
-
-class ProcessingConflictError(RuntimeError):
-    """Raised when the same document is already being processed."""
-
-
-class DocumentProcessCoordinator:
-    def __init__(self) -> None:
-        self._guard = Lock()
-        self._active_document_ids: set[str] = set()
-
-    @contextmanager
-    def acquire(self, document_id: str) -> Iterator[None]:
-        with self._guard:
-            if document_id in self._active_document_ids:
-                raise ProcessingConflictError("Document is already processing")
-            self._active_document_ids.add(document_id)
-        try:
-            yield
-        finally:
-            with self._guard:
-                self._active_document_ids.remove(document_id)
-
-
-document_process_coordinator = DocumentProcessCoordinator()
-
-
-def process_document(
-    session: Session, settings: Settings, document: Document
-) -> ProcessingJob:
-    previous_status = document.status
-    had_reader_snapshot = document.processed_content_hash is not None
-    job = ProcessingJob(
-        id=str(uuid4()),
-        document_id=document.id,
-        status="running",
-        stage="ocr",
-        progress=10,
-        error_message=None,
-    )
-    session.add(job)
-    document.status = "processing"
-    session.flush()
-
-    try:
-        # Capture translation settings now: a Settings change during a slow OCR
-        # stage must not redirect this run to another provider or key.
-        ai_adapter = create_ai_adapter(settings)
-        ocr_pages = create_ocr_adapter(settings).extract_pages(
-            Path(document.source_path)
-        )
-        job.stage = "ai_parse"
-        job.progress = 45
-        parsed = ai_adapter.parse_translate_and_summarize(
-            [(page.page_number, page.text) for page in ocr_pages]
-        )
-
-        job.stage = "persist"
-        job.progress = 75
-        with session.begin_nested():
-            replace_reader_snapshot(session, document, ocr_pages, parsed)
-
-        job.status = "completed"
-        job.stage = "completed"
-        job.progress = 100
-    except Exception as exc:  # noqa: BLE001 - adapters may raise provider errors
-        logger.exception(
-            "Document processing failed", extra={"document_id": document.id}
-        )
-        job.status = "failed"
-        job.stage = "failed"
-        job.progress = 100
-        job.error_message = public_processing_error(exc)
-        document.status = previous_status if had_reader_snapshot else "failed"
-    session.flush()
-    return job
-
-
-def public_processing_error(exc: Exception) -> str:
-    if isinstance(exc, (CliAiError, OcrUnavailableError, OrcaRouterError)):
-        return str(exc)
-    return "Processing failed. Check the server logs for details."
 
 
 def replace_reader_snapshot(session: Session, document: Document, ocr_pages, parsed):

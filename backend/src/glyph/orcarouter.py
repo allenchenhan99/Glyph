@@ -44,6 +44,21 @@ class OrcaRouterError(RuntimeError):
     """Safe to display or persist: never contains response bodies or credentials."""
 
 
+MAX_KEY_LENGTH = 4096
+INVALID_KEY_MESSAGE = (
+    "The OrcaRouter API key has an unsupported format (it must be printable "
+    "ASCII without spaces, at most 4096 characters). Re-enter the key."
+)
+
+
+def is_valid_api_key(api_key: str) -> bool:
+    """Only header-safe keys may reach the transport; nothing else is ever logged."""
+    key = api_key.strip()
+    return 0 < len(key) <= MAX_KEY_LENGTH and all(
+        33 <= ord(character) <= 126 for character in key
+    )
+
+
 @dataclass(frozen=True)
 class TransportResponse:
     status: int
@@ -95,6 +110,8 @@ class OrcaRouterAdapter(BatchAiAdapter):
             raise OrcaRouterError(
                 "Set your OrcaRouter API key and model in Settings before processing."
             )
+        if not is_valid_api_key(api_key):
+            raise OrcaRouterError(INVALID_KEY_MESSAGE)
         self._api_key = api_key.strip()
         self._transport = transport or https_transport
         self._sleep = sleep
@@ -133,6 +150,7 @@ class OrcaRouterAdapter(BatchAiAdapter):
             "User-Agent": "Glyph/0.1",
         }
         for attempt in range(TRANSPORT_ATTEMPTS):
+            self.check_cancel()
             try:
                 response = self._transport(body, headers, float(timeout_seconds))
             except (OSError, http.client.HTTPException):

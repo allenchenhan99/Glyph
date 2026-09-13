@@ -2168,3 +2168,12 @@ h1 {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+.document-processing { max-width: 340px; }
+.processing-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.processing-progress { margin-top: 12px; color: var(--ink-muted); font-size: 0.85rem; }
+.processing-progress progress { width: 100%; height: 9px; accent-color: var(--review); }
+.processing-progress p, .processing-result, .processing-warning { margin: 8px 0 0; font-size: 0.85rem; line-height: 1.5; }
+.processing-warning { color: var(--warning); }
+.document-processing .error-line { margin: 8px 0 0; font-size: 0.85rem; }

@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import {
   ApiError,
+  getProcessingPreflight,
+  listProcessingJobs,
   getAiSettings,
   activateImplementationContract,
   enqueueImplementationContract,
@@ -35,6 +37,8 @@ vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
   return {
     ...actual,
+    getProcessingPreflight: vi.fn(),
+    listProcessingJobs: vi.fn(),
     getAiSettings: vi.fn(),
     listDocuments: vi.fn(),
     processDocument: vi.fn(),
@@ -109,6 +113,10 @@ const readerPayload: ReaderPayload = {
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(listProcessingJobs).mockResolvedValue([])
+    vi.mocked(getProcessingPreflight).mockResolvedValue({
+      ready: true, provider: 'mock', source_type: 'text_pdf', page_count: 1, issues: []
+    })
     mockedListDocuments.mockResolvedValue([
       {
         id: 'doc-1',
@@ -1147,4 +1155,12 @@ describe('App', () => {
 
     expect(await screen.findByText('Upload exceeds the 50 MiB limit.')).toBeInTheDocument()
   })
+})
+
+
+it('does not claim an uploaded source is ready before preflight', async () => {
+  mockedListDocuments.mockResolvedValue([{ id: 'doc-1', title: 'scan.png', file_type: 'png', status: 'uploaded' }])
+  vi.mocked(listProcessingJobs).mockResolvedValue([])
+  render(<App />)
+  expect(await screen.findByText('PNG · Uploaded · not processed')).toBeInTheDocument()
 })

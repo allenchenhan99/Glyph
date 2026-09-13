@@ -82,6 +82,14 @@ class ProcessingJob(Base):
     stage: Mapped[str] = mapped_column(String(64), nullable=False)
     progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
     error_message: Mapped[str | None] = mapped_column(Text)
+    completed_blocks: Mapped[int | None] = mapped_column(Integer)
+    total_blocks: Mapped[int | None] = mapped_column(Integer)
+    cancel_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    provider: Mapped[str | None] = mapped_column(String(32))
+    model: Mapped[str | None] = mapped_column(String(200))
+    source_content_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now
     )
@@ -90,6 +98,15 @@ class ProcessingJob(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="jobs")
+
+    __table_args__ = (
+        Index(
+            "ix_processing_jobs_active_document",
+            "document_id",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
 
 
 class Page(Base):
