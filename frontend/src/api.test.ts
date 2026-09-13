@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getWorkspaceStatus,
   getDocumentSummaries,
   generateDocumentSummaries,
   getProcessingPreflight,
@@ -55,6 +56,19 @@ describe('document summary contract', () => {
         provider: 'mock', model: null, created_at: '2026-09-13', claims: [{ id: 'c', section_path: null, text: 'Unsupported.', evidence: [] }] }
     }))))
     await expect(getDocumentSummaries('d1')).rejects.toThrow()
+  })
+})
+
+describe('workspace contract', () => {
+  it('accepts diagnostic state without credential or document fields', async () => {
+    const unavailable = { provider: 'unknown', configured: false, message: 'Recover the workspace.' }
+    const state = { status: 'blocked', development_features: [], translation: unavailable, research: unavailable, ocr: unavailable, recovery: 'Keep the old database.' }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(state))))
+    await expect(getWorkspaceStatus()).resolves.toEqual(state)
+  })
+  it('rejects malformed capability state', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: 'ready', development_features: [], recovery: null }))))
+    await expect(getWorkspaceStatus()).rejects.toThrow()
   })
 })
 

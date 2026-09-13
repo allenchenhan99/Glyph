@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { getAiSettings, updateAiSettings, type AiProvider, type AiSettings } from '../api'
 import '../styles/settings.css'
+import type { WorkspaceStatus } from '../types'
 
-export function SettingsPage() {
+export function SettingsPage({ onApplied, workspace }: { onApplied?: () => void; workspace?: WorkspaceStatus | null }) {
   const [settings, setSettings] = useState<AiSettings | null>(null)
   const [provider, setProvider] = useState<AiProvider>('claude_cli')
   const [model, setModel] = useState('')
@@ -31,6 +32,7 @@ export function SettingsPage() {
       const updated = await updateAiSettings({ provider, model: model.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) })
       setSettings(updated)
       setKey('')
+      onApplied?.()
       setMessage('Settings applied. New document runs use this provider; current runs keep their settings.')
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : 'Could not apply settings.')
@@ -94,9 +96,14 @@ export function SettingsPage() {
         {message && <p role="status" className="settings-success">{message}</p>}
       </form>}
       <aside className="settings-footnote">
+        {workspace ? <>
+          <h2>Summary and research provider: {workspace.research.provider}</h2>
+          <p>{workspace.research.message}</p>
+          <p>This provider is configured with GLYPH_AI_MODE in .env. Restart Glyph after changing it.</p>
+        </> : null}
         <h2>Document processing</h2>
         <p>Successful translation batches are cached locally and reused when you retry with the same provider and model. Your last readable result remains available if reprocessing fails.</p>
-        <p>Research Maps and Implementation Contracts continue to use the provider configured in GLYPH_AI_MODE. These settings change document translation only. OCR is configured separately. Scanned PDFs and images still need your configured OCR provider; selecting OrcaRouter changes text translation only.</p>
+        <p>Summaries, Research Maps and Implementation Contracts continue to use the provider configured in GLYPH_AI_MODE. These settings change document translation only. OCR is configured separately. Scanned PDFs and images still need your configured OCR provider; selecting OrcaRouter changes text translation only.</p>
       </aside>
     </section>
   )

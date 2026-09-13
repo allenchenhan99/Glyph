@@ -36,7 +36,7 @@ The [product roadmap](docs/plans/2026-09-13-product-roadmap.md) tracks phased im
 - Python 3.11 or newer.
 - Node.js 22 or newer with npm.
 - Poppler (`pdftotext` and `pdftoppm`) for PDF extraction and page previews.
-- One authenticated CLI provider:
+- One authenticated CLI provider for real summary and research generation (the interface can open before this is installed):
   - [Claude Code setup](https://docs.anthropic.com/en/docs/claude-code/getting-started)
   - [OpenAI Codex CLI setup](https://help.openai.com/en/articles/11096431)
 
@@ -55,7 +55,7 @@ cd Glyph
 cp .env.example .env
 ```
 
-Choose the provider in `.env`:
+Choose the summary and research provider in `.env`:
 
 ```dotenv
 GLYPH_AI_MODE=claude_cli
@@ -82,6 +82,8 @@ Start both services:
 ```
 
 Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Research Map**. Generate the map, follow the five-step review, and open exact evidence in the full Reader. From a current Map, select **Build Implementation Contract** for the six-step implementation review and a typed export. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
+
+The getting-started guide shows translation, research, and extraction readiness separately and offers continuation actions for existing work. Checks are local; they do not verify sign-in or make model requests. See the [first-use guide](docs/first-use.md) for a deterministic trial, custom ports, and safe recovery from unsupported databases. Exported Glyph configuration takes precedence over `.env` when using `scripts/dev.sh`.
 
 Process first checks document and provider readiness, then shows queued/running progress. Refreshing the browser restores job state. Cancel stops work at a safe boundary; an in-flight external call may finish first. After a backend restart, unfinished work is marked interrupted and can be retried with current settings and compatible cached batches. See the [processing guide](docs/document-processing.md) for recovery and API details.
 
@@ -162,6 +164,7 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | `GLYPH_CLI_CONCURRENCY` | `3` | Concurrent CLI workers |
 | `GLYPH_CLI_TIMEOUT_SECONDS` | `300` | Timeout for one CLI invocation |
 | `GLYPH_FRONTEND_PORT` | `5173` | Vite development-server port |
+| `GLYPH_BACKEND_PORT` | `8000` | Backend development-server port and Vite proxy target |
 | `GLYPH_MAX_UPLOAD_BYTES` | `52428800` | Maximum accepted upload size in bytes |
 | `GLYPH_OCR_MODE` | `mock` | Text-backed extraction or `unlimited_ocr` |
 | `GLYPH_OCR_TIMEOUT_SECONDS` | `300` | Timeout for one OCR invocation |

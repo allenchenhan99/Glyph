@@ -38,4 +38,4 @@ if ! command -v pdftotext >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>
   echo "Warning: Poppler is missing. Install it before processing PDFs." >&2
 fi
 
-echo "Setup complete. Copy .env.example to .env, select a CLI provider, then run ./scripts/dev.sh."
+echo "Setup complete. Copy .env.example to .env and choose Claude/Codex CLI for real output or mock for a deterministic trial. OrcaRouter translation can be configured in the workspace. Run ./scripts/dev.sh."

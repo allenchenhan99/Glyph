@@ -375,3 +375,52 @@ def test_retained_summary_citations_do_not_duplicate_research_map_inputs(
             {b.source_text for b in inputs.blocks}
         )
         assert all(b.section_id is not None for b in map_inputs)
+
+
+def test_state_uses_the_version_published_by_the_completed_job(tmp_path, monkeypatch):
+    """Two autocommit reads can straddle a publication commit; anchor on the job."""
+    from glyph.models import SummaryJob
+
+    app, client, document_id = prepared_document(tmp_path, monkeypatch)
+    with app.state.session_factory.begin() as session:
+        inputs = capture_summary_inputs(session, document_id)
+        old = persist_summary_version(
+            session,
+            inputs,
+            validate_claims(inputs, valid_drafts(inputs)),
+            provider="mock",
+            model=None,
+        )
+        old_id = old.id
+    with app.state.session_factory.begin() as session:
+        inputs = capture_summary_inputs(session, document_id)
+        new = persist_summary_version(
+            session,
+            inputs,
+            validate_claims(inputs, valid_drafts(inputs)),
+            provider="mock",
+            model=None,
+        )
+        session.add(
+            SummaryJob(
+                id="job-new",
+                document_id=document_id,
+                version_id=new.id,
+                status="completed",
+                stage="completed",
+                progress=100,
+            )
+        )
+        new_id = new.id
+
+    # Simulate the stale first read: the active-version lookup still returns the
+    # superseded version while the job row already reports completion.
+    import glyph.summaries as module
+
+    with app.state.session_factory() as session:
+        stale_read = session.get(SummaryVersion, old_id)
+        monkeypatch.setattr(module, "_active_version", lambda s, d: stale_read)
+        state = load_summary_state(session, document_id, app.state.settings)
+    assert state.status == "available"
+    assert state.version is not None and state.version.id == new_id
+    assert state.job is not None and state.job.id == "job-new"

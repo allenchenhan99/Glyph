@@ -6,6 +6,7 @@ import type {
   DocumentRecord,
   DocumentStatus,
   DocumentSummaries,
+  WorkspaceStatus,
   EvidenceLocatorType,
   EvidenceQuality,
   EvidenceRelation,
@@ -40,6 +41,14 @@ import {
 } from './implementationContractGuards'
 
 const apiBase = ''
+
+export function getWorkspaceStatus(): Promise<WorkspaceStatus> {
+  return fetchJson('/api/workspace', (value): value is WorkspaceStatus =>
+    isRecord(value) && (value.status === 'ready' || value.status === 'blocked') &&
+    Array.isArray(value.development_features) && value.development_features.every(isString) &&
+    isNullableString(value.recovery) && [value.translation, value.research, value.ocr].every(capability =>
+      isRecord(capability) && isString(capability.provider) && isBoolean(capability.configured) && isString(capability.message)))
+}
 
 export class ApiError extends Error {
   readonly status: number
