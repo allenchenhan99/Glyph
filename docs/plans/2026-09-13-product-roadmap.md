@@ -29,11 +29,15 @@ Integrated in [PR #11](https://github.com/allenchenhan99/Glyph/pull/11), squash 
 
 Validation on 2026-09-13: 505 backend tests passed (91.63% coverage), including evidence rejection, migration preservation, source/Reader change checks, durable job recovery, and bounded CLI stage validation/cache eviction. Frontend: 154 tests passed, including historical Map source selection and exact-block focus. Browser checks with an isolated generated PDF and delayed mock verified reload during generation, keyboard quote expansion/source focus, failure retaining a prior version, successful retry, and identical-file reprocessing marking summaries stale without duplicate Reader rows. The dark summary rail was visually checked and contrast corrected. These tests establish workflow and citation integrity, not live-model semantic quality.
 
-## Stage 3 — First-use guidance (in progress: design)
+## Stage 3 — First-use guidance (verified; awaiting integration)
 
 - Guide provider setup, document import, first reading, Research Map, and Implementation Contract without forcing every step.
 - Show meaningful empty states, next actions and recoverable errors, with an explicit development-mode label.
 - Acceptance: a first-time user can complete the path from an empty workspace, keyboard interaction works, returning users can resume their existing work.
+
+Validation on 2026-09-13: 528 backend tests passed (91.80% coverage), 164 frontend tests passed (85.73% line coverage); backend lint/format/types/Bandit/dependency audit and frontend build/high-severity audit passed. Three existing moderate Vitest dependency advisories remain below the audit gate; the production build retains its large-chunk warning. Browser checks used the real startup script on custom ports with isolated data: empty workspace, PDF discovery, processing to 12 Reader blocks, Research Map, partial contract generation/resumption, keyboard hide/reopen, reload persistence, and translation settings refreshing precise development labels. The mock contract correctly remained blocked rather than implying implementation readiness. A synthetic unsupported database displayed recovery without document actions; its SHA-256 remained unchanged. No private database or live model was used.
+
+This phase also fixes a reproducible summary state-read race: completed jobs now resolve their published version directly, preventing an old active-version read from being paired with a newly completed job. A deterministic regression and 12 repeated API test runs passed. The cancellation UI test now models persistent server cancellation state across polls.
 
 ## Stage 4 — Representative quality acceptance (planned)
 

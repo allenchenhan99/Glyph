@@ -107,9 +107,9 @@ def get_settings() -> Settings:
         else None,
         unlimited_ocr_command=os.environ.get("GLYPH_UNLIMITED_OCR_COMMAND"),
         cli_model=os.environ.get("GLYPH_CLI_MODEL"),
-        cli_batch_size=int(os.environ.get("GLYPH_CLI_BATCH_SIZE", "24")),
-        cli_timeout_seconds=int(os.environ.get("GLYPH_CLI_TIMEOUT_SECONDS", "300")),
-        cli_concurrency=int(os.environ.get("GLYPH_CLI_CONCURRENCY", "3")),
+        cli_batch_size=positive_int_from_env("GLYPH_CLI_BATCH_SIZE", 24),
+        cli_timeout_seconds=positive_int_from_env("GLYPH_CLI_TIMEOUT_SECONDS", 300),
+        cli_concurrency=positive_int_from_env("GLYPH_CLI_CONCURRENCY", 3),
         max_upload_bytes=positive_int_from_env(
             "GLYPH_MAX_UPLOAD_BYTES", 50 * 1024 * 1024
         ),

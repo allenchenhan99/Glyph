@@ -341,17 +341,23 @@ def load_summary_state(
         raise SummaryNotFoundError("Document not found")
     provider = settings.ai_mode
     model = settings.cli_model if provider != "mock" else None
-    active = session.scalar(
-        select(SummaryVersion).where(
-            SummaryVersion.document_id == document.id,
-            SummaryVersion.is_active.is_(True),
-        )
-    )
+    # Read the job first. Each SELECT here is its own autocommit read, so two
+    # reads can straddle the worker's publication commit; a completed job names
+    # the version published in that same commit, which keeps the state coherent.
     latest_job = session.scalar(
         select(SummaryJob)
         .where(SummaryJob.document_id == document.id)
         .order_by(SummaryJob.created_at.desc(), SummaryJob.id.desc())
     )
+    active: SummaryVersion | None = None
+    if latest_job is not None and latest_job.status == "completed":
+        active = (
+            session.get(SummaryVersion, latest_job.version_id)
+            if latest_job.version_id is not None
+            else None
+        )
+    if active is None:
+        active = _active_version(session, document)
     version = _version_view(session, active) if active is not None else None
     job = (
         SummaryJobView(
@@ -374,6 +380,15 @@ def load_summary_state(
     else:
         status = "stale"
     return SummaryStateView(status, provider, model, version, job)
+
+
+def _active_version(session: Session, document: Document) -> SummaryVersion | None:
+    return session.scalar(
+        select(SummaryVersion).where(
+            SummaryVersion.document_id == document.id,
+            SummaryVersion.is_active.is_(True),
+        )
+    )
 
 
 def _is_current(session: Session, document: Document, version: SummaryVersion) -> bool:

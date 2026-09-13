@@ -16,6 +16,16 @@ export type DocumentRecord = {
   implementation_contract?: ImplementationContractSummary | null
 }
 
+export type WorkspaceCapability = { provider: string; configured: boolean; message: string }
+export type WorkspaceStatus = {
+  status: 'ready' | 'blocked'
+  development_features: string[]
+  translation: WorkspaceCapability
+  research: WorkspaceCapability
+  ocr: WorkspaceCapability
+  recovery: string | null
+}
+
 export type ResearchMapSummary = {
   version_id: string
   status: ResearchMapStatus

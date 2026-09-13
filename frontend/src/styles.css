@@ -2188,3 +2188,20 @@ h1 {
 .summary-evidence blockquote { margin: .65rem 0; padding-left: .65rem; border-left: 2px solid #b87957; font-size: .78rem; line-height: 1.55; }
 .summary-panel .text-button { text-align: left; white-space: normal; color: #edcb95; }
 .summary-generate { margin-top: .75rem; }
+.getting-started { padding: 16px 20px; border-bottom: 1px solid var(--rule); background: var(--paper-cool); }
+.guide-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.guide-heading .kicker { margin: 0; }
+.getting-started h2 { margin: 14px 0 6px; font: 600 1.4rem Georgia, serif; }
+.getting-started p { line-height: 1.5; }
+.development-label { border-left: 3px solid var(--warning); padding: 10px 12px; background: var(--warning-soft); color: #684112; font-size: .83rem; }
+.provider-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 14px 0; font-size: .8rem; }
+.provider-overview p { margin: 6px 0; color: var(--ink-muted); }
+.getting-started-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; padding-left: 22px; margin-bottom: 8px; }
+.getting-started-steps li { padding-left: 4px; }
+.getting-started-steps h3 { font-size: .9rem; margin: 8px 0; }
+.getting-started-steps p { font-size: .8rem; color: var(--ink-muted); }
+.getting-started-steps button { display: block; text-align: left; margin: 8px 0; white-space: normal; }
+.workspace-recovery { padding: 24px; background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 8px; }
+.workspace-recovery p { max-width: 75ch; line-height: 1.6; }
+@media (max-width: 900px) { .provider-overview, .getting-started-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .provider-overview, .getting-started-steps { grid-template-columns: 1fr; } .guide-heading { align-items: flex-start; } }

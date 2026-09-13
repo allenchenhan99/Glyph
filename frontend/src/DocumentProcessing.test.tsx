@@ -66,9 +66,12 @@ it('recovers running jobs on mount and refreshes documents once after completion
 })
 
 it('requests cooperative cancellation and explains the in-flight call boundary', async () => {
-  const running = { ...queued, status: 'running', stage: 'translation', progress: 30 }
-  vi.mocked(listProcessingJobs).mockResolvedValue([running])
-  vi.mocked(cancelProcessingJob).mockResolvedValue({ ...running, cancel_requested: true })
+  let running: ProcessingJob = { ...queued, status: 'running', stage: 'translation', progress: 30 }
+  vi.mocked(listProcessingJobs).mockImplementation(async () => [running])
+  vi.mocked(cancelProcessingJob).mockImplementation(async () => {
+    running = { ...running, cancel_requested: true }
+    return running
+  })
   render(<Harness />)
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel processing paper.pdf' }))
   expect(await screen.findByText(/current external call may finish/i)).toBeInTheDocument()

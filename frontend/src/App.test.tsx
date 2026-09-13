@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App } from './App'
 import {
   ApiError,
+  getWorkspaceStatus,
   getDocumentSummaries,
   getProcessingPreflight,
   listProcessingJobs,
@@ -38,6 +39,7 @@ vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
   return {
     ...actual,
+    getWorkspaceStatus: vi.fn(),
     getDocumentSummaries: vi.fn(),
     getProcessingPreflight: vi.fn(),
     listProcessingJobs: vi.fn(),
@@ -113,8 +115,15 @@ const readerPayload: ReaderPayload = {
 }
 
 describe('App', () => {
+  afterEach(() => vi.unstubAllGlobals())
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getAiSettings).mockResolvedValue({ provider: 'claude_cli', model: '', has_api_key: false, ocr_mode: 'mock' })
+    vi.stubGlobal('localStorage', { getItem: () => 'true', setItem: vi.fn() })
+    vi.mocked(getWorkspaceStatus).mockResolvedValue({ status: 'ready', development_features: [], recovery: null,
+      translation: { provider: 'claude_cli', configured: true, message: 'CLI found; authentication not verified.' },
+      research: { provider: 'claude_cli', configured: true, message: 'CLI found; authentication not verified.' },
+      ocr: { provider: 'mock', configured: true, message: 'Text PDFs only.' } })
     vi.mocked(getDocumentSummaries).mockResolvedValue({ status: 'not_generated', provider: 'mock', model: null, version: null, job: null })
     vi.mocked(listProcessingJobs).mockResolvedValue([])
     vi.mocked(getProcessingPreflight).mockResolvedValue({
@@ -161,6 +170,36 @@ describe('App', () => {
       progress: 100,
       error_message: null
     })
+  })
+
+  it('shows first-use actions in an empty workspace', async () => {
+    vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn() })
+    mockedListDocuments.mockResolvedValue([])
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Start with one document' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Upload your first document' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Choose translation provider' }))
+    expect(await screen.findByRole('heading', { name: 'Translation settings' })).toBeInTheDocument()
+  })
+
+  it('shows recovery instead of document actions for an unsupported workspace', async () => {
+    const ready = await vi.mocked(getWorkspaceStatus)()
+    vi.mocked(getWorkspaceStatus).mockResolvedValue({ ...ready, status: 'blocked', recovery: 'Keep the old database. Choose a new empty GLYPH_DATA_DIR and restart.' })
+    render(<App />)
+    expect(await screen.findByText(/Keep the old database/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Upload document' })).not.toBeInTheDocument()
+    vi.mocked(getWorkspaceStatus).mockRejectedValue(new Error('Offline'))
+    fireEvent.click(screen.getByRole('button', { name: 'Retry connection' }))
+    expect(await screen.findByText(/Check that the Glyph backend is running/)).toBeInTheDocument()
+  })
+
+  it('retries workspace discovery after a connection failure', async () => {
+    const ready = await vi.mocked(getWorkspaceStatus)()
+    vi.mocked(getWorkspaceStatus).mockRejectedValueOnce(new Error('Offline')).mockResolvedValue(ready)
+    render(<App />)
+    expect(await screen.findByText(/Check that the Glyph backend is running/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry connection' }))
+    await waitFor(() => expect(screen.queryByText(/Check that the Glyph backend is running/)).not.toBeInTheDocument())
   })
 
   it('opens translation settings without losing the selected reader', async () => {

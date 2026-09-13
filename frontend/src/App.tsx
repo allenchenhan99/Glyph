@@ -1,5 +1,6 @@
 import { DocumentProcessing, useDocumentProcessing } from './DocumentProcessing'
 import { SettingsPage } from './pages/SettingsPage'
+import { GettingStarted, useWorkspaceStatus } from './GettingStarted'
 import { BookOpen, FileSearch, FileUp, Loader2, RefreshCw } from 'lucide-react'
 import { useEffect, useReducer, useRef, useState } from 'react'
 
@@ -56,6 +57,8 @@ type WorkspaceSurface = 'map' | 'contract' | 'reader'
 type ReaderReturnSurface = 'map' | 'contract' | null
 
 export function App() {
+  const workspace = useWorkspaceStatus()
+  const uploadInput = useRef<HTMLInputElement>(null)
   const [documents, setDocuments] = useState<DocumentRecord[]>([])
   const processing = useDocumentProcessing(refreshDocuments)
   const [loadState, setLoadState] = useState<LoadState>('idle')
@@ -605,6 +608,15 @@ export function App() {
     }
   }
 
+  if (workspace.data?.status === 'blocked') {
+    return <main className="app-shell"><section className="workspace-recovery" aria-labelledby="recovery-title">
+      <p className="kicker">Workspace setup</p><h1 id="recovery-title">Glyph needs attention before opening this workspace</h1>
+      <p role="alert">{workspace.data.recovery ?? 'Check the backend startup terminal for recovery instructions. Your existing files have not been reset.'}</p>
+      {workspace.error ? <p role="alert">{workspace.error}</p> : null}
+      <button type="button" className="icon-button" onClick={() => { void workspace.reload(); void refreshDocuments(); void processing.reload() }}>Retry connection</button>
+    </section></main>
+  }
+
   return (
     <main className="app-shell">
       <section
@@ -624,6 +636,7 @@ export function App() {
               <FileUp aria-hidden="true" size={18} />
               <span>Upload</span>
               <input
+                ref={uploadInput}
                 aria-label="Upload document"
                 type="file"
                 accept=".pdf,.png,.jpg,.jpeg"
@@ -637,7 +650,17 @@ export function App() {
           </div>
         </div>
 
-        {settingsOpen && <div id="translation-settings"><SettingsPage /></div>}
+        {settingsOpen && <div id="translation-settings"><SettingsPage onApplied={() => void workspace.reload()} workspace={workspace.data} /></div>}
+
+        {workspace.error ? <div className="workspace-recovery" role="alert">
+          <p>{workspace.error}</p>
+          <button type="button" className="icon-button" onClick={() => { void workspace.reload(); void refreshDocuments(); void processing.reload() }}>Retry connection</button>
+        </div> : null}
+        {workspace.data?.status === 'ready' && loadState !== 'loading' ? <GettingStarted
+          workspace={workspace.data} documents={documents}
+          onSettings={() => setSettingsOpen(true)} onUpload={() => uploadInput.current?.click()}
+          onRead={document => void handleOpenReader(document)} onMap={document => void handleOpenMap(document)}
+          onContract={document => void handleOpenContract(document)} /> : null}
 
         {notice ? (
           <p
