@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "nist-tn1297",
+      "filename": "nist-tn1297.pdf",
+      "url": "https://nvlpubs.nist.gov/nistpubs/legacy/tn/nbstechnicalnote1297.pdf",
+      "sha256": "f2c8e6026d5589a63d492f192b72cd905f554b477a6049532256170aec477e92",
+      "pages": 25,
+      "title": "NIST TN 1297 (1994): Guidelines for Evaluating and Expressing the Uncertainty of NIST Measurement Results",
+      "license_url": "https://www.nist.gov/open/copyright-fair-use-and-licensing-statements-srd-data-software-and-technical-series-publications",
+      "rights_note": "NIST employee-authored technical publication; US public domain and worldwide reuse permission under linked policy. Republished courtesy of the National Institute of Standards and Technology."
+    },
+    {
+      "id": "feds-2022055",
+      "filename": "feds-2022055.pdf",
+      "url": "https://www.federalreserve.gov/econres/feds/files/2022055pap.pdf",
+      "sha256": "ab9d2fbda3319d76fef27726eeda60bbd1cf81bf9c5c78fab0c904cae5d08a40",
+      "pages": 54,
+      "title": "Ross, Ross and Ross (2022): Cash-Hedged Stock Returns, FEDS 2022-055",
+      "license_url": "https://www.federalreserve.gov/disclaimer.htm",
+      "rights_note": "Publicly available Federal Reserve Board working paper; website policy permits reuse unless otherwise indicated. Source: Federal Reserve Board. Exclude third-party quoted material and logos from redistributed excerpts; research is preliminary."
+    }
+  ],
+  "cases": [
+    {
+      "id": "nist-formulas-two-columns",
+      "source_id": "nist-tn1297",
+      "page": 14,
+      "kind": "text",
+      "anchors": [
+        "Welch-Satterthwaite formula",
+        "(B-1)",
+        "(B-2)",
+        "Type B evaluation",
+        "least squares"
+      ],
+      "ordered_passages": [
+        "rather than 2.0. In this case, and in other similar cases where",
+        "having a level of confidence close to a specified level is required,"
+      ],
+      "rows": []
+    },
+    {
+      "id": "nist-table",
+      "source_id": "nist-tn1297",
+      "page": 15,
+      "kind": "text",
+      "anchors": [
+        "Table B.1",
+        "Fraction p in percent",
+        "Degrees of",
+        "99.73"
+      ],
+      "ordered_passages": [],
+      "rows": [
+        [
+          "1",
+          "1.84",
+          "6.31",
+          "12.71",
+          "13.97",
+          "63.66",
+          "235.80"
+        ],
+        [
+          "8",
+          "1.07",
+          "1.86",
+          "2.31",
+          "2.37",
+          "3.36",
+          "4.28"
+        ],
+        [
+          "20",
+          "1.03",
+          "1.72",
+          "2.09",
+          "2.13",
+          "2.85",
+          "3.42"
+        ],
+        [
+          "100",
+          "1.005",
+          "1.660",
+          "1.984",
+          "2.025",
+          "2.626",
+          "3.077"
+        ],
+        [
+          "∞",
+          "1.000",
+          "1.645",
+          "1.960",
+          "2.000",
+          "2.576",
+          "3.000"
+        ]
+      ]
+    },
+    {
+      "id": "feds-prose",
+      "source_id": "feds-2022055",
+      "page": 4,
+      "kind": "text",
+      "anchors": [
+        "three steps",
+        "two securities",
+        "$100",
+        "$50",
+        "$1.01",
+        "0.8%",
+        "CAPM"
+      ],
+      "ordered_passages": [
+        "Investors can hedge their implicit cash positions in three steps.",
+        "We calculate cash-hedged returns by treating a stock as a portfolio of two securities:"
+      ],
+      "rows": []
+    },
+    {
+      "id": "feds-table",
+      "source_id": "feds-2022055",
+      "page": 38,
+      "kind": "text",
+      "anchors": [
+        "Cash Share (Percent)",
+        "Standard Returns",
+        "Cash-Hedged Returns",
+        "Table 1:"
+      ],
+      "ordered_passages": [],
+      "rows": [
+        [
+          "Small",
+          "24",
+          "15",
+          "11",
+          "9",
+          "7"
+        ],
+        [
+          "Big",
+          "18",
+          "14",
+          "11",
+          "8",
+          "7"
+        ],
+        [
+          "Average",
+          "21",
+          "14",
+          "11",
+          "8",
+          "6"
+        ]
+      ]
+    },
+    {
+      "id": "nist-table-raster-derivative",
+      "source_id": "nist-tn1297",
+      "page": 15,
+      "kind": "scan",
+      "anchors": [],
+      "ordered_passages": [],
+      "rows": []
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-13T13:30:18.844862+00:00",
+  "scope": "deterministic/extraction_only",
+  "semantics": null,
+  "note": "Deterministic extraction checks only. Translation, summary, formula reconstruction and OCR quality are not evaluated by this run.",
+  "tools": {
+    "pdftotext": "pdftotext version 26.03.0",
+    "pdfinfo": "pdfinfo version 26.03.0"
+  },
+  "sources": [
+    {
+      "id": "nist-tn1297",
+      "filename": "nist-tn1297.pdf",
+      "sha256": "f2c8e6026d5589a63d492f192b72cd905f554b477a6049532256170aec477e92",
+      "title": "NIST TN 1297 (1994): Guidelines for Evaluating and Expressing the Uncertainty of NIST Measurement Results",
+      "license_url": "https://www.nist.gov/open/copyright-fair-use-and-licensing-statements-srd-data-software-and-technical-series-publications",
+      "rights_note": "NIST employee-authored technical publication; US public domain and worldwide reuse permission under linked policy. Republished courtesy of the National Institute of Standards and Technology.",
+      "expected_pages": 25,
+      "text_pages": 25,
+      "pdfinfo_pages": 25,
+      "pdfinfo_pages_match_manifest": true,
+      "page_identity_ok": true,
+      "block_page_identity_ok": true,
+      "block_count": 122,
+      "section_count": 1,
+      "block_types": {
+        "paragraph": 114,
+        "question": 5,
+        "formula": 3
+      },
+      "scope": "deterministic/extraction_only",
+      "semantics": null
+    },
+    {
+      "id": "feds-2022055",
+      "filename": "feds-2022055.pdf",
+      "sha256": "ab9d2fbda3319d76fef27726eeda60bbd1cf81bf9c5c78fab0c904cae5d08a40",
+      "title": "Ross, Ross and Ross (2022): Cash-Hedged Stock Returns, FEDS 2022-055",
+      "license_url": "https://www.federalreserve.gov/disclaimer.htm",
+      "rights_note": "Publicly available Federal Reserve Board working paper; website policy permits reuse unless otherwise indicated. Source: Federal Reserve Board. Exclude third-party quoted material and logos from redistributed excerpts; research is preliminary.",
+      "expected_pages": 54,
+      "text_pages": 54,
+      "pdfinfo_pages": 54,
+      "pdfinfo_pages_match_manifest": true,
+      "page_identity_ok": true,
+      "block_page_identity_ok": true,
+      "block_count": 291,
+      "section_count": 1,
+      "block_types": {
+        "paragraph": 244,
+        "formula": 15,
+        "figure": 11,
+        "list": 11,
+        "table": 7,
+        "question": 3
+      },
+      "scope": "deterministic/extraction_only",
+      "semantics": null
+    }
+  ],
+  "cases": [
+    {
+      "id": "nist-formulas-two-columns",
+      "source_id": "nist-tn1297",
+      "page": 14,
+      "kind": "text",
+      "scope": "deterministic/extraction_only",
+      "semantics": null,
+      "page_text_present": true,
+      "anchors": {
+        "total": 5,
+        "hit": 5,
+        "missed": []
+      },
+      "ordered_passages": {
+        "total": 2,
+        "contiguous": 0,
+        "in_order": true,
+        "failed": [
+          "rather than 2.0. In this case, and in other similar cases where",
+          "having a level of confidence close to a specified level is required,"
+        ]
+      },
+      "rows": {
+        "total": 0,
+        "matched": 0,
+        "failed": [],
+        "intact": 0,
+        "failed_block_rows": [],
+        "intact_in_blocks_ratio": null
+      },
+      "status": "content_checks_failed"
+    },
+    {
+      "id": "nist-table",
+      "source_id": "nist-tn1297",
+      "page": 15,
+      "kind": "text",
+      "scope": "deterministic/extraction_only",
+      "semantics": null,
+      "page_text_present": true,
+      "anchors": {
+        "total": 4,
+        "hit": 4,
+        "missed": []
+      },
+      "ordered_passages": {
+        "total": 0,
+        "contiguous": 0,
+        "in_order": true,
+        "failed": []
+      },
+      "rows": {
+        "total": 5,
+        "matched": 5,
+        "failed": [],
+        "intact": 0,
+        "failed_block_rows": [
+          [
+            "1",
+            "1.84",
+            "6.31",
+            "12.71",
+            "13.97",
+            "63.66",
+            "235.80"
+          ],
+          [
+            "8",
+            "1.07",
+            "1.86",
+            "2.31",
+            "2.37",
+            "3.36",
+            "4.28"
+          ],
+          [
+            "20",
+            "1.03",
+            "1.72",
+            "2.09",
+            "2.13",
+            "2.85",
+            "3.42"
+          ],
+          [
+            "100",
+            "1.005",
+            "1.660",
+            "1.984",
+            "2.025",
+            "2.626",
+            "3.077"
+          ],
+          [
+            "∞",
+            "1.000",
+            "1.645",
+            "1.960",
+            "2.000",
+            "2.576",
+            "3.000"
+          ]
+        ],
+        "intact_in_blocks_ratio": 0.0
+      },
+      "status": "content_checks_failed"
+    },
+    {
+      "id": "feds-prose",
+      "source_id": "feds-2022055",
+      "page": 4,
+      "kind": "text",
+      "scope": "deterministic/extraction_only",
+      "semantics": null,
+      "page_text_present": true,
+      "anchors": {
+        "total": 7,
+        "hit": 7,
+        "missed": []
+      },
+      "ordered_passages": {
+        "total": 2,
+        "contiguous": 2,
+        "in_order": true,
+        "failed": []
+      },
+      "rows": {
+        "total": 0,
+        "matched": 0,
+        "failed": [],
+        "intact": 0,
+        "failed_block_rows": [],
+        "intact_in_blocks_ratio": null
+      },
+      "status": "all_checks_passed"
+    },
+    {
+      "id": "feds-table",
+      "source_id": "feds-2022055",
+      "page": 38,
+      "kind": "text",
+      "scope": "deterministic/extraction_only",
+      "semantics": null,
+      "page_text_present": true,
+      "anchors": {
+        "total": 4,
+        "hit": 4,
+        "missed": []
+      },
+      "ordered_passages": {
+        "total": 0,
+        "contiguous": 0,
+        "in_order": true,
+        "failed": []
+      },
+      "rows": {
+        "total": 3,
+        "matched": 3,
+        "failed": [],
+        "intact": 0,
+        "failed_block_rows": [
+          [
+            "Small",
+            "24",
+            "15",
+            "11",
+            "9",
+            "7"
+          ],
+          [
+            "Big",
+            "18",
+            "14",
+            "11",
+            "8",
+            "7"
+          ],
+          [
+            "Average",
+            "21",
+            "14",
+            "11",
+            "8",
+            "6"
+          ]
+        ],
+        "intact_in_blocks_ratio": 0.0
+      },
+      "status": "content_checks_failed"
+    },
+    {
+      "id": "nist-table-raster-derivative",
+      "source_id": "nist-tn1297",
+      "page": 15,
+      "kind": "scan",
+      "scope": "deterministic/extraction_only",
+      "semantics": null,
+      "ocr_quality": "not_evaluated",
+      "status": "blocked_no_ocr"
+    }
+  ],
+  "summary": {
+    "sources_total": 2,
+    "cases_total": 5,
+    "cases_all_checks_passed": 1,
+    "cases_blocked_no_ocr": 1
+  }
+}

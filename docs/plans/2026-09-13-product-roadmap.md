@@ -1,6 +1,6 @@
 # Glyph product milestones
 
-Status: active. Approved by the user on 2026-09-13; execute in order, record evidence before marking a milestone complete.
+Status: four milestones delivered. Approved by the user on 2026-09-13; acceptance evidence and delivery PRs are recorded below. The quality baseline explicitly records remaining product limitations; milestone completion does not imply every document format passes.
 
 ## Stage 1 — Reliable document processing (complete)
 
@@ -29,7 +29,9 @@ Integrated in [PR #11](https://github.com/allenchenhan99/Glyph/pull/11), squash 
 
 Validation on 2026-09-13: 505 backend tests passed (91.63% coverage), including evidence rejection, migration preservation, source/Reader change checks, durable job recovery, and bounded CLI stage validation/cache eviction. Frontend: 154 tests passed, including historical Map source selection and exact-block focus. Browser checks with an isolated generated PDF and delayed mock verified reload during generation, keyboard quote expansion/source focus, failure retaining a prior version, successful retry, and identical-file reprocessing marking summaries stale without duplicate Reader rows. The dark summary rail was visually checked and contrast corrected. These tests establish workflow and citation integrity, not live-model semantic quality.
 
-## Stage 3 — First-use guidance (verified; awaiting integration)
+## Stage 3 — First-use guidance (complete)
+
+Integrated in [PR #12](https://github.com/allenchenhan99/Glyph/pull/12), squash commit `95a404d`. Both GitHub CI jobs passed; the merged tree matches the tested branch.
 
 - Guide provider setup, document import, first reading, Research Map, and Implementation Contract without forcing every step.
 - Show meaningful empty states, next actions and recoverable errors, with an explicit development-mode label.
@@ -39,13 +41,19 @@ Validation on 2026-09-13: 528 backend tests passed (91.80% coverage), 164 fronte
 
 This phase also fixes a reproducible summary state-read race: completed jobs now resolve their published version directly, preventing an old active-version read from being paired with a newly completed job. A deterministic regression and 12 repeated API test runs passed. The cancellation UI test now models persistent server cancellation state across polls.
 
-## Stage 4 — Representative quality acceptance (planned)
+## Stage 4 — Representative quality acceptance (complete)
+
+Delivery: [PR #13](https://github.com/allenchenhan99/Glyph/pull/13). The milestone delivers reproducible acceptance, a reviewed baseline, and regression checks. It does not claim that the reported extraction or citation-granularity failures are solved.
 
 - Maintain a small, licensed/public corpus covering text-backed, scanned, equation-heavy and table-heavy papers; keep large files outside git and record source/license/hash.
 - Measure extraction completeness, translation alignment, formula fidelity, evidence navigation and recovery behavior against explicit expected results.
 - Label deterministic tests separately from live model evaluation. Never call a mock run a translation-quality pass.
 - Acceptance: reproducible report with failures and limitations, regression checks for discovered issues, no private documents or credentials committed.
 
+Validation on 2026-09-13: [pinned public corpus and reproduction commands](../quality/README.md), [machine-readable extraction results](../quality/2026-09-13-extraction.json), and [manual/live baseline](../quality/2026-09-13-baseline.md). Fresh downloads verified both source hashes; NIST (25 pages) and FEDS (54 pages) cover selected single-column prose, two-column formulas, tables and an explicitly derived scan. The report records 20/20 sampled anchors, two-column ordering failure, table row loss in Reader blocks, and formula/section limitations. One real translation call retained the checked numeric and conceptual content; two real summary calls produced six exact citations, with two quotations too narrow to support their entire claims. These are measured failures, not hidden passes.
+
+Browser verification on a public-page derivative confirmed keyboard quotation navigation, source-change OCR guidance retaining the old Reader, successful retry, one Reader block after reprocessing, and stale-summary labeling. The quality runner adds 31 offline regressions covering corrupted/missing sources, invalid manifests, wrong table values, broken passages, row flattening, missing pages, and scan error classification. All 559 backend tests passed (91.62% coverage); backend lint/format/types/Bandit/dependency audit passed. The standalone live evaluator also passed lint, type and security checks and refuses execution without its explicit opt-in. Existing frontend tests/build are unchanged from stage three and run again in PR CI.
+
 ## Delivery rules
 
-Use a focused branch/PR per milestone, preserve local/private artifacts, and run the repository gates before integration. The roadmap remains active until each acceptance criterion is met; implementation progress is not evidence of completion.
+Use a focused branch/PR per milestone, preserve local/private artifacts, and run the repository gates before integration. Completion requires acceptance evidence; implementation progress alone is insufficient. Further fixes should use the published baseline to demonstrate improvement without hiding existing failures.

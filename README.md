@@ -30,6 +30,8 @@ The [product roadmap](docs/plans/2026-09-13-product-roadmap.md) tracks phased im
 
 **Current limits:** Glyph is pre-1.0 and intended for a trusted single user. Summary claims are AI drafts: exact quotation checks establish citation integrity, not the correctness of a model's interpretation. Scanned documents require a separately configured OCR adapter. Summaries, Research Maps and Implementation Contracts use the configured research provider; OrcaRouter currently supports document translation only. Mock mode is labeled development output, not real model evaluation.
 
+The [public-document quality baseline](docs/quality/2026-09-13-baseline.md) identifies remaining extraction limits: multi-column reading order, table row structure, numbered section detection, and formula fidelity. Check original pages before relying on these formats. The [reproducible corpus](docs/quality/README.md) separates extraction checks, workflow integrity, and bounded live-model observations.
+
 ## Requirements
 
 - macOS or Linux. Windows users should use WSL.
