@@ -1,4 +1,9 @@
-# Glyph
+<p align="center">
+  <img src="docs/assets/glyph-icon.png" width="128" height="128" alt="Glyph — an ivory open book with a terracotta fold" />
+</p>
+<h1 align="center">Glyph</h1>
+<p align="center"><strong>Read the paper. Trace the evidence. Define the implementation.</strong></p>
+<p align="center">A local-first research workspace for Traditional Chinese readers.</p>
 
 [![CI](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml/badge.svg)](https://github.com/allenchenhan99/Glyph/actions/workflows/ci.yml)
 
@@ -6,29 +11,21 @@ Glyph is a local-first, evidence-first research workspace for Chinese-speaking q
 
 Glyph is currently pre-1.0. It is designed for a trusted single user on one machine, not as an authenticated or internet-facing service.
 
-## Current Capabilities
+## From paper to implementation
 
-- Discover `.pdf`, `.png`, `.jpg`, and `.jpeg` files placed in `book/`.
-- Upload documents through the browser.
-- Extract text-backed PDFs with Poppler or call an external Unlimited-OCR checkout for scanned material.
-- Translate bounded block batches through Claude Code or Codex CLI without storing an API key in Glyph.
-- Validate block coverage, retry invalid batches, and resume from a local AI cache.
-- Preserve the previous readable result when reprocessing fails.
-- Detect changed or missing source files without deleting the last readable result.
-- Bound uploads and external tools by content type, size, and timeout.
-- Read source and Traditional Chinese side by side with paired hover states.
-- Render reconstructed formulas as accessible KaTeX/MathML with links to original pages.
-- Generate immutable Research Map versions with a controlled quantitative-finance ontology.
-- Validate exact evidence anchors before claim synthesis and expose partial/conflicting states.
-- Complete a bounded five-step review with verbatim English and aligned Traditional Chinese evidence.
-- Confirm, question, or correct claims without overwriting the AI draft.
-- Deep-link Map evidence into Reader blocks and preserve context on return.
-- Build typed, immutable Implementation Contracts from an explicit Research Map version.
-- Keep author-stated, derived, human-decided, and missing implementation values visibly distinct.
-- Audit blockers and readiness outside the AI provider, with append-only decisions and exact evidence.
-- Compare contract versions and export deterministic JSON or Markdown without executing generated content.
+| Step | What you get |
+| --- | --- |
+| **Import** | Upload a PDF or document image, or discover files in `book/`. Sources and processing artifacts stay in your local workspace. |
+| **Read** | Aligned original and Traditional Chinese text, paired hover states, accessible formulas, and links to source pages. |
+| **Map the research** | Versioned Research Maps connect the research question, data, signal, method, findings, and limitations to exact evidence. |
+| **Review the claims** | A five-step review lets you confirm, question, or correct claims while preserving the original AI draft. |
+| **Define the implementation** | Build a typed Implementation Contract from an explicit Map version, review six steps, compare revisions, and export JSON or Markdown. |
 
-Section summaries currently use deterministic placeholder text. Full AI-generated document and section summaries remain a future milestone.
+Glyph distinguishes author-stated facts, derived values, human decisions, and missing information. Evidence gaps and conflicts remain visible; exported contracts do not execute code or imply that a strategy is ready to trade.
+
+Processing validates block coverage and caches successful translation batches. Changed or missing source files retain their last readable result, and failed reprocessing does not replace it. Upload limits and external-tool timeouts bound local processing.
+
+**Current limits:** Glyph is pre-1.0 and intended for a trusted single user. Section and document summaries are deterministic placeholders. Scanned documents require a separately configured OCR adapter. Research Maps and Implementation Contracts use the configured CLI provider; OrcaRouter currently supports document translation only.
 
 ## Requirements
 
@@ -85,6 +82,33 @@ Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then se
 
 Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
 
+## Translation providers
+
+Open **Translation settings** in the workspace to choose Claude Code, Codex CLI, or OrcaRouter. Changes apply to new document-processing runs. Research Maps and Implementation Contracts continue to use `GLYPH_AI_MODE` from your environment.
+
+For OrcaRouter:
+
+1. Create an account and obtain your own API key.
+2. Select **OrcaRouter**, enter a text-model ID with JSON output support, and paste the key.
+3. Apply settings, then process a document. Check the provider's model pricing and account limits before a large run.
+
+For persistent local configuration, add the following to your ignored `.env` file:
+
+```dotenv
+GLYPH_AI_MODE=claude_cli
+GLYPH_TRANSLATION_PROVIDER=orcarouter
+GLYPH_ORCAROUTER_MODEL=your-text-model-id
+ORCAROUTER_API_KEY=your-api-key
+```
+
+Keep `GLYPH_AI_MODE` set to your authenticated Claude Code or Codex CLI for research generation. The translation override does not change that provider.
+
+Keys entered in the interface remain in backend memory and are never returned by the settings API. Restarting the backend clears session overrides and restores environment configuration. Glyph sends requests to `https://api.orcarouter.ai/v1/chat/completions`; a referral URL is an optional signup link, not an API endpoint or credential.
+
+[Create an OrcaRouter account](https://www.orcarouter.ai/ref/ref_790f54197e176818f92b) · [Browse models](https://www.orcarouter.ai/models)
+
+**Referral disclosure:** Glyph may receive 5% of eligible referred usage. Using the referral link is optional; translation uses your account and your API key.
+
 ## Privacy Model
 
 Glyph does not commit or upload runtime artifacts to this repository. The following stay local and are ignored by git:
@@ -96,11 +120,11 @@ Glyph does not commit or upload runtime artifacts to this repository. The follow
 
 Only `book/.gitkeep` is tracked so the input directory exists after cloning. CLI credentials remain in the provider's own user-level credential store; Glyph neither reads nor copies those files.
 
-Local-first describes storage and application execution, not offline model inference. Text sent for translation is processed by the selected Claude or OpenAI service under that user's account, plan, retention policy, and usage limits. Do not process sensitive material unless that provider arrangement is appropriate for it.
+Local-first describes storage and application execution, not offline model inference. Text sent for translation is processed by the selected Claude, OpenAI, or OrcaRouter service (including its upstream model provider) under your account's terms and usage limits. Research Map and Contract generation also send evidence text to the configured CLI provider. External OCR has its own data-handling behavior. Do not process sensitive material unless that provider arrangement is appropriate for it.
 
 ## OCR Modes
 
-`GLYPH_OCR_MODE=mock` is the default development mode. Despite the name, it uses Poppler text extraction for text-backed PDFs and deterministic behavior for tests. It is not sufficient for scanned PDFs or document photos.
+`GLYPH_OCR_MODE=mock` is the default development mode. Despite the name, it uses Poppler text extraction for text-backed PDFs and deterministic behavior for tests. For image-like input without extracted text it produces placeholder content; it does not perform real OCR. Configure an OCR adapter before processing scanned PDFs or document photos.
 
 For scanned material, install [Baidu Unlimited-OCR](https://github.com/baidu/Unlimited-OCR) separately and configure:
 
@@ -123,6 +147,9 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `GLYPH_AI_MODE` | `claude_cli` | `claude_cli`, `codex_cli`, or deterministic `mock` |
+| `GLYPH_TRANSLATION_PROVIDER` | `GLYPH_AI_MODE` | Optional translation-only provider override, including `orcarouter` |
+| `GLYPH_ORCAROUTER_MODEL` | unset | Exact OrcaRouter text-model ID; required for OrcaRouter |
+| `ORCAROUTER_API_KEY` | unset | Your OrcaRouter API key; keep it in ignored local configuration |
 | `GLYPH_CLI_MODEL` | provider default | Optional CLI model override |
 | `GLYPH_CLI_BATCH_SIZE` | `24` | Blocks sent per CLI invocation |
 | `GLYPH_CLI_CONCURRENCY` | `3` | Concurrent CLI workers |
@@ -138,6 +165,8 @@ Unlimited-OCR has its own model, hardware, and dependency requirements. Follow i
 | `GLYPH_BOOK_DIR` | `book/` | Optional source-document directory override |
 | `GLYPH_DATA_DIR` | `data/` | Optional runtime-data directory override |
 | `GLYPH_DATABASE_URL` | local SQLite | Optional SQLAlchemy database URL |
+
+OrcaRouter uses one worker, at most eight blocks per batch (or a lower `GLYPH_CLI_BATCH_SIZE`), and `GLYPH_CLI_TIMEOUT_SECONDS` for its request timeout. Truncated responses are split into smaller batches; an oversized single block fails with an actionable message.
 
 Lower `GLYPH_CLI_CONCURRENCY` if the selected CLI account reports usage or rate limits. Successful batches remain cached under `data/ai-cache/` and are reused on the next processing attempt.
 
@@ -179,7 +208,7 @@ Database changes are managed by Alembic and applied automatically at backend sta
 ```text
 book/          ignored user documents
 data/          ignored SQLite, uploads, page images, and AI cache
-backend/       FastAPI, SQLAlchemy, OCR and CLI adapters
+backend/       FastAPI, SQLAlchemy, OCR, CLI and OrcaRouter adapters
 frontend/      React, TypeScript, Vite, and KaTeX reader
 scripts/       setup and local development commands
 docs/plans/    architecture and implementation decisions

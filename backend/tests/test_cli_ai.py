@@ -293,3 +293,143 @@ def test_codex_cli_failure_uses_resolved_executable_without_exposing_stderr(
     assert str(error.value) == "codex CLI failed with exit code 3"
     assert observed["command"][0] == "/opt/bin/codex"
     assert "private" not in str(error.value)
+
+
+def single_block_runner(record: list[int], failure: Exception):
+    def runner(command, prompt, timeout_seconds):
+        blocks = json.loads(prompt)["blocks"]
+        record.append(len(blocks))
+        if len(blocks) > 1:
+            raise failure
+        return {
+            "items": [
+                {
+                    "id": blocks[0]["id"],
+                    "translated_text": f"譯文 {blocks[0]['id']}",
+                    "formula_latex": None,
+                }
+            ]
+        }
+
+    return runner
+
+
+def test_cli_adapter_splits_timed_out_batches_and_caches_the_merged_parent(
+    tmp_path,
+):
+    batch_sizes: list[int] = []
+    adapter = CliAiAdapter(
+        provider="claude",
+        model=None,
+        batch_size=4,
+        timeout_seconds=90,
+        concurrency=1,
+        cache_dir=tmp_path,
+        runner=single_block_runner(
+            batch_sizes, CliAiError("claude CLI timed out after 90 seconds")
+        ),
+    )
+    source = [(1, "One.\n\nTwo.\n\nThree.\n\nFour.")]
+
+    first = adapter.parse_translate_and_summarize(source)
+    second = adapter.parse_translate_and_summarize(source)
+
+    assert batch_sizes == [4, 2, 1, 1, 2, 1, 1]
+    expected = ["譯文 0", "譯文 1", "譯文 2", "譯文 3"]
+    assert [block.translated_text for block in first.blocks] == expected
+    assert [block.translated_text for block in second.blocks] == expected
+
+
+def test_batch_adapter_splits_truncated_output_like_timeouts(tmp_path):
+    from glyph.cli_ai import BatchAiAdapter, TruncatedOutputError
+
+    batch_sizes: list[int] = []
+    adapter = BatchAiAdapter(
+        provider="orcarouter",
+        model="m",
+        batch_size=4,
+        timeout_seconds=30,
+        concurrency=1,
+        cache_dir=tmp_path,
+        runner=single_block_runner(batch_sizes, TruncatedOutputError("truncated")),
+    )
+    parsed = adapter.parse_translate_and_summarize(
+        [(1, "One.\n\nTwo.\n\nThree.\n\nFour.")]
+    )
+
+    assert batch_sizes == [4, 2, 1, 1, 2, 1, 1]
+    assert [block.translated_text for block in parsed.blocks] == [
+        "譯文 0",
+        "譯文 1",
+        "譯文 2",
+        "譯文 3",
+    ]
+
+
+def test_single_oversized_block_fails_once_without_corrective_retry(tmp_path):
+    from glyph.cli_ai import BatchAiAdapter, TruncatedOutputError
+
+    calls = 0
+
+    def runner(command, prompt, timeout_seconds):
+        nonlocal calls
+        calls += 1
+        raise TruncatedOutputError("truncated")
+
+    adapter = BatchAiAdapter(
+        provider="orcarouter",
+        model="m",
+        batch_size=4,
+        timeout_seconds=30,
+        concurrency=1,
+        cache_dir=tmp_path,
+        runner=runner,
+    )
+    with pytest.raises(CliAiError, match="too large"):
+        adapter.parse_translate_and_summarize([(1, "One.")])
+    assert calls == 1
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        [None],
+        [{"id": [], "translated_text": "中文", "formula_latex": None}],
+        [{"id": "0", "translated_text": "中文"}],
+        "not a list",
+    ],
+)
+def test_malformed_items_are_rejected_without_crashing(items):
+    calls = 0
+
+    def runner(command, prompt, timeout_seconds):
+        nonlocal calls
+        calls += 1
+        return {"items": items}
+
+    adapter = CliAiAdapter(
+        provider="claude", model=None, batch_size=4, timeout_seconds=30, runner=runner
+    )
+    with pytest.raises(CliAiError):
+        adapter.parse_translate_and_summarize([(1, "One.")])
+    assert calls == 2
+
+
+def test_latex_on_non_formula_block_is_dropped_instead_of_failing():
+    def runner(command, prompt, timeout_seconds):
+        blocks = json.loads(prompt)["blocks"]
+        return {
+            "items": [
+                {"id": b["id"], "translated_text": "中文", "formula_latex": "x^2"}
+                for b in blocks
+            ]
+        }
+
+    adapter = CliAiAdapter(
+        provider="claude", model=None, batch_size=4, timeout_seconds=30, runner=runner
+    )
+    parsed = adapter.parse_translate_and_summarize([(1, "Plain prose.")])
+    assert parsed.blocks[0].block_type == "paragraph"
+    assert parsed.blocks[0].formula_latex is None
+    assert parsed.blocks[0].translated_text == "中文"

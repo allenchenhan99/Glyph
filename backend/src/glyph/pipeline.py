@@ -24,6 +24,7 @@ from glyph.models import (
     Summary,
 )
 from glyph.ocr import OcrUnavailableError, create_ocr_adapter
+from glyph.orcarouter import OrcaRouterError
 
 logger = logging.getLogger(__name__)
 
@@ -71,12 +72,15 @@ def process_document(
     session.flush()
 
     try:
+        # Capture translation settings now: a Settings change during a slow OCR
+        # stage must not redirect this run to another provider or key.
+        ai_adapter = create_ai_adapter(settings)
         ocr_pages = create_ocr_adapter(settings).extract_pages(
             Path(document.source_path)
         )
         job.stage = "ai_parse"
         job.progress = 45
-        parsed = create_ai_adapter(settings).parse_translate_and_summarize(
+        parsed = ai_adapter.parse_translate_and_summarize(
             [(page.page_number, page.text) for page in ocr_pages]
         )
 
@@ -102,7 +106,7 @@ def process_document(
 
 
 def public_processing_error(exc: Exception) -> str:
-    if isinstance(exc, (CliAiError, OcrUnavailableError)):
+    if isinstance(exc, (CliAiError, OcrUnavailableError, OrcaRouterError)):
         return str(exc)
     return "Processing failed. Check the server logs for details."
 

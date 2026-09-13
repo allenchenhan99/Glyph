@@ -21,6 +21,10 @@ class CliAiError(RuntimeError):
     pass
 
 
+class TruncatedOutputError(CliAiError):
+    """The provider stopped before the batch was complete; the batch is too large."""
+
+
 TRANSLATION_SCHEMA = {
     "type": "object",
     "properties": {
@@ -43,7 +47,9 @@ TRANSLATION_SCHEMA = {
 }
 
 
-class CliAiAdapter:
+class BatchAiAdapter:
+    """Validated, cached, resumable block batches over any structured-output runner."""
+
     def __init__(
         self,
         provider: str,
@@ -54,8 +60,8 @@ class CliAiAdapter:
         cache_dir: Path | None = None,
         runner: CliRunner | None = None,
     ) -> None:
-        if provider not in {"claude", "codex"}:
-            raise ValueError(f"Unsupported CLI AI provider: {provider}")
+        if provider not in {"claude", "codex", "orcarouter"}:
+            raise ValueError(f"Unsupported AI provider: {provider}")
         if batch_size < 1:
             raise ValueError("CLI batch size must be at least 1")
         if concurrency < 1:
@@ -80,7 +86,7 @@ class CliAiAdapter:
 
         def translate_batch(batch):
             prompt = build_translation_prompt(batch)
-            command = build_cli_command(self.provider, schema_json, self.model)
+            command = self.build_command(schema_json)
             translated_by_id = self.load_or_run_batch(command, prompt, batch)
             translated_batch = []
             for block in batch:
@@ -94,11 +100,18 @@ class CliAiAdapter:
                 )
             return translated_batch
 
-        with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
-            translated_batches = list(executor.map(translate_batch, batches))
+        if self.concurrency == 1:
+            # Lazy map: a fatal provider error must not keep billing queued batches.
+            translated_batches = list(map(translate_batch, batches))
+        else:
+            with ThreadPoolExecutor(max_workers=self.concurrency) as executor:
+                translated_batches = list(executor.map(translate_batch, batches))
         translated_blocks = [block for batch in translated_batches for block in batch]
 
         return replace(source_document, blocks=translated_blocks)
+
+    def build_command(self, schema_json: str) -> list[str]:
+        return []
 
     def load_or_run_batch(
         self, command: list[str], prompt: str, batch
@@ -119,6 +132,17 @@ class CliAiAdapter:
             try:
                 response = self.runner(command, current_prompt, self.timeout_seconds)
             except CliAiError as exc:
+                oversized = is_timeout_error(exc) or isinstance(
+                    exc, TruncatedOutputError
+                )
+                if oversized and len(batch) > 1:
+                    return self.run_split_batch(command, batch, cache_path)
+                if isinstance(exc, TruncatedOutputError):
+                    # A corrective retry cannot shrink the output; stop after one call.
+                    raise CliAiError(
+                        f"Block {batch[0].order_index} is too large to translate in "
+                        "one response; split that block in the source document."
+                    ) from exc
                 last_error = exc
                 current_prompt = add_retry_instruction(prompt, str(exc))
                 continue
@@ -133,6 +157,20 @@ class CliAiAdapter:
             return validated
         raise last_error or CliAiError("CLI returned an invalid translation batch")
 
+    def run_split_batch(
+        self, command: list[str], batch, parent_cache_path: Path | None
+    ) -> dict[str, dict]:
+        midpoint = len(batch) // 2
+        merged: dict[str, dict] = {}
+        for child_batch in (batch[:midpoint], batch[midpoint:]):
+            child_prompt = build_translation_prompt(child_batch)
+            merged.update(self.load_or_run_batch(command, child_prompt, child_batch))
+        response = {"items": [merged[str(block.order_index)] for block in batch]}
+        validated = validate_batch_response(response, batch)
+        if parent_cache_path is not None:
+            store_json_cache(parent_cache_path, response)
+        return validated
+
     def batch_cache_path(self, prompt: str) -> Path:
         if self.cache_dir is None:
             raise CliAiError("CLI cache directory is not configured")
@@ -145,6 +183,11 @@ class CliAiAdapter:
         if self.cache_dir is None:
             raise CliAiError("CLI cache directory is not configured")
         store_json_cache(cache_path, response)
+
+
+class CliAiAdapter(BatchAiAdapter):
+    def build_command(self, schema_json: str) -> list[str]:
+        return build_cli_command(self.provider, schema_json, self.model)
 
 
 def load_json_cache(cache_path: Path) -> dict | None:
@@ -306,6 +349,13 @@ def validate_batch_response(response: dict, blocks) -> dict[str, dict]:
     items = response.get("items")
     if not isinstance(items, list):
         raise CliAiError("CLI response does not contain an items array")
+    if any(
+        not isinstance(item, dict)
+        or not isinstance(item.get("id"), str)
+        or "formula_latex" not in item
+        for item in items
+    ):
+        raise CliAiError("Translation response contains malformed items.")
     expected_ids = {str(block.order_index) for block in blocks}
     actual_ids = [item.get("id") for item in items if isinstance(item, dict)]
     if len(actual_ids) != len(set(actual_ids)) or set(actual_ids) != expected_ids:
@@ -327,9 +377,8 @@ def validate_batch_response(response: dict, blocks) -> dict[str, dict]:
                 f"CLI returned no LaTeX for formula block {block.order_index}"
             )
         if block.block_type != "formula" and formula_latex is not None:
-            raise CliAiError(
-                f"CLI returned LaTeX for non-formula block {block.order_index}"
-            )
+            # Stray LaTeX on prose is harmless; dropping it avoids a paid retry.
+            item["formula_latex"] = None
     return by_id
 
 
@@ -345,6 +394,10 @@ def normalize_formula_latex(value: str | None) -> str | None:
     ):
         latex = latex[2:-2].strip()
     return latex or None
+
+
+def is_timeout_error(error: CliAiError) -> bool:
+    return "timed out" in str(error).casefold()
 
 
 def add_retry_instruction(prompt: str, error: str) -> str:

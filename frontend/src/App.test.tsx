@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import {
   ApiError,
+  getAiSettings,
   activateImplementationContract,
   enqueueImplementationContract,
   getActiveImplementationContract,
@@ -34,6 +35,7 @@ vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
   return {
     ...actual,
+    getAiSettings: vi.fn(),
     listDocuments: vi.fn(),
     processDocument: vi.fn(),
     uploadDocument: vi.fn(),
@@ -148,6 +150,21 @@ describe('App', () => {
       progress: 100,
       error_message: null
     })
+  })
+
+  it('opens translation settings without losing the selected reader', async () => {
+    vi.mocked(getAiSettings).mockResolvedValue({
+      provider: 'claude_cli', model: '', has_api_key: false, ocr_mode: 'mock'
+    })
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Full Reader for sample.pdf' }))
+    await screen.findByLabelText('Reader for sample.pdf')
+    fireEvent.click(screen.getByRole('button', { name: 'Translation settings' }))
+    expect(await screen.findByLabelText('Translation provider')).toHaveValue('claude_cli')
+    expect(screen.getByLabelText('Reader for sample.pdf')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings' }))
+    expect(screen.queryByLabelText('Translation provider')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Reader for sample.pdf')).toBeInTheDocument()
   })
 
   it('opens the Research Map as the default research action when available', async () => {
