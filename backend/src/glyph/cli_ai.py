@@ -11,6 +11,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from threading import Lock
 
 from glyph.ai import MockAiAdapter, ParsedDocument
 
@@ -23,6 +24,14 @@ class CliAiError(RuntimeError):
 
 class TruncatedOutputError(CliAiError):
     """The provider stopped before the batch was complete; the batch is too large."""
+
+
+class TranslationCancelledError(RuntimeError):
+    """Raised between batches when the caller asked to stop; never retried."""
+
+
+ProgressCallback = Callable[[int, int], None]
+CancelCheck = Callable[[], bool]
 
 
 TRANSLATION_SCHEMA = {
@@ -73,9 +82,14 @@ class BatchAiAdapter:
         self.concurrency = concurrency
         self.cache_dir = cache_dir
         self.runner = runner or run_cli
+        self.should_cancel: CancelCheck | None = None
 
     def parse_translate_and_summarize(
-        self, page_text: list[tuple[int, str]]
+        self,
+        page_text: list[tuple[int, str]],
+        *,
+        progress: ProgressCallback | None = None,
+        should_cancel: CancelCheck | None = None,
     ) -> ParsedDocument:
         source_document = MockAiAdapter().parse_translate_and_summarize(page_text)
         schema_json = json.dumps(TRANSLATION_SCHEMA, ensure_ascii=True)
@@ -83,8 +97,17 @@ class BatchAiAdapter:
             source_document.blocks[start : start + self.batch_size]
             for start in range(0, len(source_document.blocks), self.batch_size)
         ]
+        total_blocks = len(source_document.blocks)
+        completed_blocks = 0
+        progress_guard = Lock()
+        self.should_cancel = should_cancel
+        if progress is not None:
+            progress(0, total_blocks)
 
         def translate_batch(batch):
+            nonlocal completed_blocks
+            # Cancellation is checked before each billable request, never inside one.
+            self.check_cancel()
             prompt = build_translation_prompt(batch)
             command = self.build_command(schema_json)
             translated_by_id = self.load_or_run_batch(command, prompt, batch)
@@ -98,6 +121,10 @@ class BatchAiAdapter:
                         formula_latex=normalize_formula_latex(item["formula_latex"]),
                     )
                 )
+            with progress_guard:
+                completed_blocks += len(batch)
+                if progress is not None:
+                    progress(completed_blocks, total_blocks)
             return translated_batch
 
         if self.concurrency == 1:
@@ -112,6 +139,11 @@ class BatchAiAdapter:
 
     def build_command(self, schema_json: str) -> list[str]:
         return []
+
+    def check_cancel(self) -> None:
+        """Stop before the next request, retry, split child or transport attempt."""
+        if self.should_cancel is not None and self.should_cancel():
+            raise TranslationCancelledError("Translation was cancelled.")
 
     def load_or_run_batch(
         self, command: list[str], prompt: str, batch
@@ -129,6 +161,7 @@ class BatchAiAdapter:
         last_error = None
         current_prompt = prompt
         for _attempt in range(2):
+            self.check_cancel()
             try:
                 response = self.runner(command, current_prompt, self.timeout_seconds)
             except CliAiError as exc:

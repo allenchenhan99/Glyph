@@ -1156,3 +1156,11 @@ describe('App', () => {
     expect(await screen.findByText('Upload exceeds the 50 MiB limit.')).toBeInTheDocument()
   })
 })
+
+
+it('does not claim an uploaded source is ready before preflight', async () => {
+  mockedListDocuments.mockResolvedValue([{ id: 'doc-1', title: 'scan.png', file_type: 'png', status: 'uploaded' }])
+  vi.mocked(listProcessingJobs).mockResolvedValue([])
+  render(<App />)
+  expect(await screen.findByText('PNG · Uploaded · not processed')).toBeInTheDocument()
+})

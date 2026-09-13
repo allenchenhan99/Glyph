@@ -2,7 +2,7 @@
 
 Status: active. Approved by the user on 2026-09-13; execute in order, record evidence before marking a milestone complete.
 
-## Stage 1 — Reliable document processing (in progress)
+## Stage 1 — Reliable document processing (implemented; integration pending)
 
 - Preflight reports source availability/type, extraction capability, OCR configuration, translation provider configuration, and actionable blockers before enqueueing. It makes no paid model request and must not claim credentials are authenticated.
 - A persistent job is returned promptly from Process. Browser reload discovers the latest job and progress. Only one active job per document is allowed.
@@ -11,6 +11,10 @@ Status: active. Approved by the user on 2026-09-13; execute in order, record evi
 - Restarted jobs become clearly interrupted and can be retried using valid cached batches. Never persist a session API key or silently change provider to resume work.
 - Source mutation during processing must not publish a Reader for the wrong source revision.
 - Acceptance: backend/frontend regression gates, migration preservation, cancellation/restart tests, browser flow using isolated data. Retain Research Map and Implementation Contract behavior.
+
+Validation on 2026-09-13: 457 backend tests passed (91.27% coverage), 142 frontend tests passed; backend lint/format/types/Bandit/dependency audit and frontend production build/high-severity dependency audit passed. Browser checks used an isolated SQLite database, a generated one-page PDF, a PNG, and a delayed deterministic model: preflight blocked missing OCR; queued work survived page reload; cancellation retained the Reader; a deliberately terminated/restarted server surfaced interrupted work without replay. Migration tests preserve completed history and interrupt previous active jobs. These are reliability checks, not live translation-quality evaluation. Preflight samples PDF text availability; it does not establish whole-document extraction completeness.
+
+The local historical desktop database has a different, unsupported schema and was not migrated or modified. This stage verifies the supported public schema migration only. First-use guidance must explain recovery for unsupported databases without overwriting them.
 
 ## Stage 2 — Evidence-linked summaries (planned)
 

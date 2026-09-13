@@ -14,6 +14,7 @@ from glyph.contract_jobs import (
 from glyph.contract_routes import router as contract_router
 from glyph.database import create_session_factory
 from glyph.documents import router as documents_router
+from glyph.processing_jobs import ProcessingJobExecutor, mark_interrupted_jobs
 from glyph.provider_settings import router as provider_settings_router
 from glyph.research_ai import create_research_map_provider
 from glyph.research_jobs import (
@@ -29,6 +30,11 @@ def create_app() -> FastAPI:
     settings.book_dir.mkdir(parents=True, exist_ok=True)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     session_factory = create_session_factory(settings)
+    # Unfinished document jobs from a previous process cannot be resumed without
+    # their in-memory credentials; surface them as interrupted, never replay them.
+    with session_factory.begin() as session:
+        mark_interrupted_jobs(session, settings)
+    processing_executor = ProcessingJobExecutor(session_factory, settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -56,12 +62,14 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            processing_executor.shutdown()
             contract_executor.shutdown()
             research_executor.shutdown()
 
     app = FastAPI(title="Glyph", lifespan=lifespan)
     app.state.settings = settings
     app.state.session_factory = session_factory
+    app.state.processing_job_executor = processing_executor
     app.include_router(documents_router)
     app.include_router(research_router)
     app.include_router(contract_router)

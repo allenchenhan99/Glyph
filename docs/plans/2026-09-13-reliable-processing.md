@@ -15,7 +15,7 @@ Files: backend/src/glyph/ocr.py, new processing_preflight.py, documents.py; test
 Write failing tests for scanned images without OCR, missing CLI/key/model, unavailable source, valid text PDFs, and bounded failure. Implement actionable preflight responses; remove placeholder OCR success. Run focused pytest tests before proceeding.
 
 ### Task 2: Durable worker and migration
-Files: models.py, schemas.py, new processing_jobs.py, pipeline.py, cli_ai.py, main.py, documents.py; new Alembic revision under backend/alembic/versions; new test_processing_jobs.py plus migration/API regressions.
+Files: models.py, schemas.py, new processing_jobs.py, pipeline.py, cli_ai.py, main.py, documents.py; new Alembic revision under backend/migrations/versions; new test_processing_jobs.py plus migration/API regressions.
 Write failing tests for prompt enqueue, active-job uniqueness, published progress, cooperative cancel, snapshot preservation, source mutation, shutdown/restart and retry cache. Implement job transitions with short transactions, progress/cancel callbacks and captured credentials. Never persist API keys. Preserve provider configuration boundaries.
 
 ### Task 3: Frontend processing flow

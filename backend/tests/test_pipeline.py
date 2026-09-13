@@ -1,8 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
-from threading import Event, Lock
-
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+from support import process_and_wait, wait_for_job
 
 from glyph.ai import ParsedBlock
 from glyph.main import create_app
@@ -55,8 +53,8 @@ def test_process_document_creates_blocks_translations_sections_and_summary(
 
     process_response = client.post(f"/api/documents/{document_id}/process")
 
-    assert process_response.status_code == 200
-    job = process_response.json()
+    assert process_response.status_code == 202
+    job = wait_for_job(client, process_response.json()["id"])
     assert job["status"] == "completed"
     assert job["stage"] == "completed"
     assert job["progress"] == 100
@@ -144,7 +142,7 @@ def test_persistence_failure_keeps_last_good_reader_snapshot(tmp_path, monkeypat
     app = create_app()
     client = TestClient(app)
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
     with app.state.session_factory() as session:
         before = snapshot_values(reader_snapshot(session, document_id))
         document = session.get(Document, document_id)
@@ -158,7 +156,7 @@ def test_persistence_failure_keeps_last_good_reader_snapshot(tmp_path, monkeypat
     monkeypatch.setattr(
         "glyph.pipeline.persist_sections", fail_after_new_page_is_flushed
     )
-    failed_job = client.post(f"/api/documents/{document_id}/process").json()
+    failed_job = process_and_wait(client, document_id)
     with app.state.session_factory() as session:
         after = snapshot_values(reader_snapshot(session, document_id))
         document = session.get(Document, document_id)
@@ -193,7 +191,7 @@ def test_initial_persistence_failure_leaves_no_reader_snapshot(tmp_path, monkeyp
         "glyph.pipeline.persist_sections", fail_after_new_page_is_flushed
     )
 
-    failed_job = client.post(f"/api/documents/{document_id}/process").json()
+    failed_job = process_and_wait(client, document_id)
 
     with app.state.session_factory() as session:
         snapshot = snapshot_values(reader_snapshot(session, document_id))
@@ -216,43 +214,21 @@ def test_overlapping_processing_of_same_document_returns_conflict(
     monkeypatch.setenv("GLYPH_OCR_MODE", "mock")
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     app = create_app()
+    monkeypatch.setattr(
+        app.state.processing_job_executor, "submit", lambda *args, **kwargs: None
+    )
     first_client = TestClient(app)
     second_client = TestClient(app)
     document_id = first_client.get("/api/documents").json()[0]["id"]
-    first_started = Event()
-    release_first = Event()
-    call_lock = Lock()
-    call_count = 0
 
-    def controllable_process(session, settings, document):
-        nonlocal call_count
-        with call_lock:
-            call_count += 1
-            current_call = call_count
-        if current_call == 1:
-            first_started.set()
-            assert release_first.wait(timeout=5)
-        return ProcessingJob(
-            id=f"job-{current_call}",
-            document_id=document.id,
-            status="completed",
-            stage="completed",
-            progress=100,
-            error_message=None,
-        )
+    first_response = first_client.post(f"/api/documents/{document_id}/process")
+    second_response = second_client.post(f"/api/documents/{document_id}/process")
 
-    monkeypatch.setattr("glyph.documents.process_document", controllable_process)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        first_future = executor.submit(
-            first_client.post, f"/api/documents/{document_id}/process"
-        )
-        assert first_started.wait(timeout=5)
-        second_response = second_client.post(f"/api/documents/{document_id}/process")
-        release_first.set()
-        first_response = first_future.result(timeout=5)
-
-    assert first_response.status_code == 200
+    assert first_response.status_code == 202
     assert second_response.status_code == 409
     assert second_response.json()["detail"] == "Document is already processing"
-    assert call_count == 1
+    with app.state.session_factory() as session:
+        jobs = session.scalars(
+            select(ProcessingJob).where(ProcessingJob.document_id == document_id)
+        ).all()
+    assert len(jobs) == 1

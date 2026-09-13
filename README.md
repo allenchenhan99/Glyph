@@ -23,7 +23,9 @@ Glyph is currently pre-1.0. It is designed for a trusted single user on one mach
 
 Glyph distinguishes author-stated facts, derived values, human decisions, and missing information. Evidence gaps and conflicts remain visible; exported contracts do not execute code or imply that a strategy is ready to trade.
 
-Processing validates block coverage and caches successful translation batches. Changed or missing source files retain their last readable result, and failed reprocessing does not replace it. Upload limits and external-tool timeouts bound local processing.
+Processing checks local readiness before enqueueing a persistent background job, validates block coverage, and caches successful translation batches. Changed or missing source files retain their last readable result, and failed reprocessing does not replace it. Upload limits and external-tool timeouts bound local processing.
+
+The [product roadmap](docs/plans/2026-09-13-product-roadmap.md) tracks phased improvements and their acceptance criteria.
 
 **Current limits:** Glyph is pre-1.0 and intended for a trusted single user. Section and document summaries are deterministic placeholders. Scanned documents require a separately configured OCR adapter. Research Maps and Implementation Contracts use the configured CLI provider; OrcaRouter currently supports document translation only.
 
@@ -80,6 +82,8 @@ Start both services:
 
 Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then select **Process** and **Research Map**. Generate the map, follow the five-step review, and open exact evidence in the full Reader. From a current Map, select **Build Implementation Contract** for the six-step implementation review and a typed export. Set `GLYPH_FRONTEND_PORT` in `.env` if that port is occupied.
 
+Process first checks document and provider readiness, then shows queued/running progress. Refreshing the browser restores job state. Cancel stops work at a safe boundary; an in-flight external call may finish first. After a backend restart, unfinished work is marked interrupted and can be retried with current settings and compatible cached batches. See the [processing guide](docs/document-processing.md) for recovery and API details.
+
 Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
 
 ## Translation providers
@@ -124,7 +128,7 @@ Local-first describes storage and application execution, not offline model infer
 
 ## OCR Modes
 
-`GLYPH_OCR_MODE=mock` is the default development mode. Despite the name, it uses Poppler text extraction for text-backed PDFs and deterministic behavior for tests. For image-like input without extracted text it produces placeholder content; it does not perform real OCR. Configure an OCR adapter before processing scanned PDFs or document photos.
+`GLYPH_OCR_MODE=mock` is the default development mode. Despite the name, it uses Poppler text extraction for text-backed PDFs and deterministic behavior for tests. It does not perform real OCR: scanned PDFs and images are rejected with a configuration message. Plain-text development fixtures remain explicitly labeled as fixtures. Configure an OCR adapter before processing scanned PDFs or document photos.
 
 For scanned material, install [Baidu Unlimited-OCR](https://github.com/baidu/Unlimited-OCR) separately and configure:
 

@@ -433,3 +433,63 @@ def test_latex_on_non_formula_block_is_dropped_instead_of_failing():
     assert parsed.blocks[0].block_type == "paragraph"
     assert parsed.blocks[0].formula_latex is None
     assert parsed.blocks[0].translated_text == "中文"
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        CliAiError("CLI translation coverage mismatch"),
+        CliAiError("claude CLI timed out after 90 seconds"),
+    ],
+)
+def test_cancel_requested_during_first_call_stops_retries_and_splits(failure):
+    from glyph.cli_ai import TranslationCancelledError
+
+    calls = 0
+    cancelled = False
+
+    def runner(command, prompt, timeout_seconds):
+        nonlocal calls, cancelled
+        calls += 1
+        cancelled = True  # the user cancels while this call is in flight
+        raise failure
+
+    adapter = CliAiAdapter(
+        provider="claude", model=None, batch_size=4, timeout_seconds=90, runner=runner
+    )
+    with pytest.raises(TranslationCancelledError):
+        adapter.parse_translate_and_summarize(
+            [(1, "One.\n\nTwo.\n\nThree.\n\nFour.")],
+            should_cancel=lambda: cancelled,
+        )
+    assert calls == 1
+
+
+def test_cancel_between_batches_stops_before_the_next_request():
+    from glyph.cli_ai import TranslationCancelledError
+
+    calls = 0
+
+    def runner(command, prompt, timeout_seconds):
+        nonlocal calls
+        calls += 1
+        blocks = json.loads(prompt)["blocks"]
+        return {
+            "items": [
+                {"id": b["id"], "translated_text": "中文", "formula_latex": None}
+                for b in blocks
+            ]
+        }
+
+    adapter = CliAiAdapter(
+        provider="claude", model=None, batch_size=1, timeout_seconds=90, runner=runner
+    )
+    progress: list[tuple[int, int]] = []
+    with pytest.raises(TranslationCancelledError):
+        adapter.parse_translate_and_summarize(
+            [(1, "One.\n\nTwo.\n\nThree.")],
+            progress=lambda done, total: progress.append((done, total)),
+            should_cancel=lambda: calls >= 1,
+        )
+    assert calls == 1
+    assert progress == [(0, 3), (1, 3)]

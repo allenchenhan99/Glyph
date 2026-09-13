@@ -21,18 +21,32 @@ from glyph.implementation_contracts import (
     load_implementation_contract_library_summaries,
 )
 from glyph.models import Block, Document, Section, Summary
-from glyph.pipeline import (
+from glyph.pipeline import get_job
+from glyph.processing_jobs import (
     ProcessingConflictError,
-    document_process_coordinator,
-    get_job,
-    process_document,
+    ProcessingExecutorClosedError,
+    ProcessingJobNotFoundError,
+    ProcessingJobStateError,
+    abandon_unsubmitted_job,
+    enqueue_processing_job,
+    list_latest_jobs,
+    request_cancel,
 )
+from glyph.processing_preflight import run_preflight
 from glyph.research_maps import (
     ResearchMapLibrarySummaryView,
     load_research_map_library_summaries,
 )
 from glyph.research_schemas import ResearchMapLibrarySummaryOut
-from glyph.schemas import BlockOut, DocumentOut, JobOut, ReaderOut, SectionOut
+from glyph.schemas import (
+    BlockOut,
+    DocumentOut,
+    JobOut,
+    PreflightIssueOut,
+    PreflightOut,
+    ReaderOut,
+    SectionOut,
+)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg"}
 UPLOAD_CHUNK_SIZE = 1024 * 1024
@@ -222,6 +236,11 @@ def job_to_out(job) -> JobOut:
         stage=job.stage,
         progress=job.progress,
         error_message=job.error_message,
+        completed_blocks=job.completed_blocks,
+        total_blocks=job.total_blocks,
+        cancel_requested=bool(job.cancel_requested),
+        provider=job.provider,
+        model=job.model,
     )
 
 
@@ -325,9 +344,34 @@ async def upload_document(
     return document_to_out(document)
 
 
-@router.post("/documents/{document_id}/process", response_model=JobOut)
+@router.get("/documents/{document_id}/preflight", response_model=PreflightOut)
+def preflight_route(
+    document_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+) -> PreflightOut:
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    result = run_preflight(session, settings, document)
+    return PreflightOut(
+        ready=result.ready,
+        source_type=result.source_type,
+        provider=result.provider,
+        page_count=result.page_count,
+        issues=[
+            PreflightIssueOut(
+                code=issue.code, severity=issue.severity, message=issue.message
+            )
+            for issue in result.issues
+        ],
+    )
+
+
+@router.post("/documents/{document_id}/process", response_model=JobOut, status_code=202)
 def process_document_route(
     document_id: str,
+    request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     session: Annotated[Session, Depends(get_session)],
 ) -> JobOut:
@@ -335,12 +379,42 @@ def process_document_route(
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
     require_source_path(document)
+    refresh_document_state(
+        document,
+        Path(document.source_path),
+        unprocessed_status_for_path(settings, Path(document.source_path)),
+    )
+    result = run_preflight(session, settings, document)
+    blockers = [issue for issue in result.blockers if issue.code != "job_active"]
+    if blockers:
+        raise HTTPException(
+            status_code=422,
+            detail=" ".join(issue.message for issue in blockers),
+        )
     try:
-        with document_process_coordinator.acquire(document_id):
-            job = process_document(session, settings, document)
+        job, translation = enqueue_processing_job(session, settings, document)
     except ProcessingConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    session.commit()
+    # The row is durable before the worker sees it; credentials stay in memory.
+    try:
+        request.app.state.processing_job_executor.submit(job.id, translation)
+    except ProcessingExecutorClosedError as exc:
+        abandon_unsubmitted_job(session, job.id, settings)
+        session.commit()
+        raise HTTPException(
+            status_code=503,
+            detail="Glyph is shutting down and cannot start processing. "
+            "Retry after it restarts.",
+        ) from exc
     return job_to_out(job)
+
+
+@router.get("/jobs", response_model=list[JobOut])
+def list_jobs_route(
+    session: Annotated[Session, Depends(get_session)],
+) -> list[JobOut]:
+    return [job_to_out(job) for job in list_latest_jobs(session)]
 
 
 @router.get("/jobs/{job_id}", response_model=JobOut)
@@ -351,6 +425,22 @@ def get_job_route(
     job = get_job(session, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    return job_to_out(job)
+
+
+@router.post("/jobs/{job_id}/cancel", response_model=JobOut)
+def cancel_job_route(
+    job_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[Session, Depends(get_session)],
+) -> JobOut:
+    try:
+        job = request_cancel(session, job_id, settings)
+    except ProcessingJobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ProcessingJobStateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    session.flush()
     return job_to_out(job)
 
 

@@ -2,6 +2,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from support import process_and_wait
 
 from glyph.main import create_app
 from glyph.models import Block, Document
@@ -35,7 +36,7 @@ def test_documents_endpoint_does_not_downgrade_processed_status(tmp_path, monkey
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
 
     response = client.get("/api/documents")
 
@@ -61,7 +62,7 @@ def test_changed_source_is_marked_stale_without_deleting_reader_data(
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
     original_reader = client.get(f"/api/documents/{document_id}/reader").json()
 
     source.write_text("# Revised\n\nNew source that has not been processed.")
@@ -91,7 +92,7 @@ def test_reader_can_load_an_exact_retained_source_snapshot(tmp_path, monkeypatch
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
     historical_hash = "b" * 64
     with client.app.state.session_factory.begin() as session:
         session.add(
@@ -195,7 +196,7 @@ def test_missing_source_is_retained_and_restored_using_hash_state(
     monkeypatch.setenv("GLYPH_AI_MODE", "mock")
     client = TestClient(create_app())
     document_id = client.get("/api/documents").json()[0]["id"]
-    client.post(f"/api/documents/{document_id}/process")
+    process_and_wait(client, document_id)
 
     source.unlink()
     missing_document = client.get("/api/documents").json()[0]

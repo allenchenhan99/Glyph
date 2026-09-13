@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from support import process_and_wait
 
 from glyph.main import create_app
 from glyph.models import Block
@@ -39,10 +40,9 @@ def test_empirical_asset_pricing_benchmark_is_complete_verifiable_and_determinis
     client = TestClient(app)
     document_id = client.get("/api/documents").json()[0]["id"]
 
-    processing = client.post(f"/api/documents/{document_id}/process")
+    processing = process_and_wait(client, document_id)
 
-    assert processing.status_code == 200
-    assert processing.json()["status"] == "completed"
+    assert processing["status"] == "completed"
 
     provider = CountingMockProvider()
     with app.state.session_factory.begin() as session:

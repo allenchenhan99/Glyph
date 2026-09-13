@@ -856,9 +856,9 @@ function errorMessage(error: unknown, fallback: string): string {
 function documentStatusLabel(status: DocumentRecord['status']): string {
   switch (status) {
     case 'discovered':
-      return 'Ready to process'
+      return 'Not processed'
     case 'uploaded':
-      return 'Uploaded · ready to process'
+      return 'Uploaded · not processed'
     case 'processing':
       return 'Processing'
     case 'completed':

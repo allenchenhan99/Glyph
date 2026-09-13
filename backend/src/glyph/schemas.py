@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from glyph.contract_schemas import ImplementationContractLibrarySummaryOut
@@ -22,6 +24,25 @@ class JobOut(BaseModel):
     stage: str
     progress: float
     error_message: str | None = None
+    completed_blocks: int | None = None
+    total_blocks: int | None = None
+    cancel_requested: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
+class PreflightIssueOut(BaseModel):
+    code: str
+    severity: Literal["error", "warning"]
+    message: str
+
+
+class PreflightOut(BaseModel):
+    ready: bool
+    source_type: str
+    provider: str
+    page_count: int | None = None
+    issues: list[PreflightIssueOut]
 
 
 class BlockOut(BaseModel):

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
-from glyph.config import Settings
+from glyph.config import Settings, TranslationSettings
 
 
 @dataclass(frozen=True)
@@ -35,8 +36,18 @@ class ParsedDocument:
 
 class MockAiAdapter:
     def parse_translate_and_summarize(
-        self, page_text: list[tuple[int, str]]
+        self,
+        page_text: list[tuple[int, str]],
+        *,
+        progress: Callable[[int, int], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> ParsedDocument:
+        document = self.prepare_document(page_text)
+        if progress is not None:
+            progress(len(document.blocks), len(document.blocks))
+        return document
+
+    def prepare_document(self, page_text: list[tuple[int, str]]) -> ParsedDocument:
         blocks: list[ParsedBlock] = []
         sections: list[ParsedSection] = []
         current_section = "Document"
@@ -192,11 +203,18 @@ def looks_like_heading(text: str) -> bool:
     return "....." not in text
 
 
-def create_ai_adapter(settings: Settings):
-    """Translation adapter; Research Maps and Contracts keep using ai_mode."""
+def create_ai_adapter(
+    settings: Settings, translation: TranslationSettings | None = None
+):
+    """Translation adapter; Research Maps and Contracts keep using ai_mode.
+
+    Pass ``translation`` to build the adapter from settings captured earlier (for
+    example at enqueue time) instead of the current session state.
+    """
     from glyph.config import resolve_translation_settings
 
-    translation = resolve_translation_settings(settings)
+    if translation is None:
+        translation = resolve_translation_settings(settings)
     if translation.provider == "orcarouter":
         from glyph.orcarouter import OrcaRouterAdapter
 

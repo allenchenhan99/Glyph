@@ -25,26 +25,65 @@ class OcrPage:
     image_path: str | None = None
 
 
+SOURCE_SIGNATURES = (
+    ("pdf", b"%PDF-"),
+    ("image", b"\x89PNG\r\n\x1a\n"),
+    ("image", b"\xff\xd8\xff"),
+)
+OCR_REQUIRED_MESSAGE = (
+    "This file has no extractable text and needs OCR. Configure "
+    "GLYPH_OCR_MODE=unlimited_ocr before processing scanned PDFs or images; "
+    "the development mock does not read images."
+)
+
+
+def detect_source_kind(source_path: Path) -> str:
+    """Classify a file as pdf, image, text (development fixture), unknown or missing.
+
+    Only readable UTF-8 text without NUL bytes counts as a fixture; damaged or
+    unrecognized binary content is reported as unknown so it can never be
+    treated as ready.
+    """
+    if not source_path.is_file():
+        return "missing"
+    with source_path.open("rb") as source:
+        head = source.read(8)
+    for kind, signature in SOURCE_SIGNATURES:
+        if head.startswith(signature):
+            return kind
+    try:
+        sample = source_path.read_bytes()[:65536]
+        sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return "unknown"
+    return "unknown" if b"\x00" in sample else "text"
+
+
 class MockOcrAdapter:
+    """Development adapter: Poppler text extraction or plain-text fixtures only."""
+
     def __init__(self, timeout_seconds: int = 300):
         self.timeout_seconds = timeout_seconds
 
     def extract_pages(self, source_path: Path) -> list[OcrPage]:
-        if source_path.suffix.lower() == ".pdf":
+        kind = detect_source_kind(source_path)
+        if kind == "pdf":
             pdf_pages = extract_text_backed_pdf_pages(source_path, self.timeout_seconds)
             if pdf_pages:
                 return pdf_pages
-
-        try:
-            text = source_path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            text = ""
-        text = text.replace("%PDF-1.4", "").strip()
+            raise OcrUnavailableError(OCR_REQUIRED_MESSAGE)
+        if kind == "image":
+            raise OcrUnavailableError(OCR_REQUIRED_MESSAGE)
+        if kind == "missing":
+            raise OcrUnavailableError("Source file is missing.")
+        if kind != "text":
+            raise OcrUnavailableError(
+                "The file is not a readable PDF, image or text fixture."
+            )
+        text = source_path.read_text(encoding="utf-8").strip()
         if not text:
-            text = (
-                "# Untitled\n\n"
-                "OCR mock text extracted from an image-like source.\n\n"
-                "1. Review this block."
+            raise OcrUnavailableError(
+                "The development text fixture is empty; nothing can be extracted."
             )
         return [OcrPage(page_number=1, text=text)]
 
@@ -163,6 +202,24 @@ def extract_text_backed_pdf_pages(
         if text:
             pages.append(OcrPage(page_number=index, text=text))
     return pages
+
+
+def pdf_has_text(source_path: Path, timeout_seconds: int, max_pages: int = 5) -> bool:
+    """Bounded check whether the first pages carry a text layer."""
+    executable = shutil.which("pdftotext")
+    if executable is None:
+        return False
+    try:
+        completed = subprocess.run(  # nosec B603
+            [executable, "-l", str(max_pages), str(source_path), "-"],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        return False
+    return completed.returncode == 0 and bool(completed.stdout.strip())
 
 
 def run_command(command: list[str], cwd: Path | None, timeout_seconds: int) -> None:

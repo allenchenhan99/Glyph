@@ -323,7 +323,7 @@ def test_contract_migration_preserves_reader_and_research_map(tmp_path):
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     assert counts == dict.fromkeys(CONTRACT_TABLES, 0)
-    assert revision == "0005_contract_job_map_selection"
+    assert revision == "0006_processing_job_reliability"
 
 
 def test_contract_migration_declares_expected_foreign_keys(tmp_path):
@@ -461,7 +461,7 @@ def test_contract_job_map_selection_migration_preserves_existing_jobs(tmp_path):
         "2026-01-01",
         "2026-01-01",
     )
-    assert revision == "0005_contract_job_map_selection"
+    assert revision == "0006_processing_job_reliability"
 
 
 def test_contract_models_expose_domain_relationships():
@@ -666,7 +666,7 @@ def test_research_map_migration_preserves_reader_and_invents_no_map_rows(tmp_pat
     )
     assert map_row_counts == dict.fromkeys(RESEARCH_MAP_TABLES, 0)
     assert block_source_hash == "legacy-hash"
-    assert revision == "0005_contract_job_map_selection"
+    assert revision == "0006_processing_job_reliability"
 
 
 def test_completed_legacy_document_backfills_processed_hash(tmp_path):
@@ -706,3 +706,77 @@ def test_unrecognized_partial_schema_fails_without_dropping_tables(tmp_path):
     inspector = inspect(engine)
     assert inspector.get_table_names() == ["documents"]
     assert [column["name"] for column in inspector.get_columns("documents")] == ["id"]
+
+
+def test_processing_job_migration_interrupts_unfinished_work_and_keeps_history(
+    tmp_path,
+):
+    settings = make_settings(tmp_path)
+    create_unmigrated_engine(settings).dispose()
+    command.upgrade(
+        alembic_config(settings.database_url), "0005_contract_job_map_selection"
+    )
+    engine = create_engine(settings.database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, title, source_path, content_hash, processed_content_hash, "
+                "file_type, status, created_at, updated_at) VALUES "
+                "('doc-running', 'Running', '/tmp/running.pdf', :hash, :hash, "
+                "'pdf', 'processing', '2026-01-01', '2026-01-01'), "
+                "('doc-new', 'New', '/tmp/new.pdf', :hash, NULL, "
+                "'pdf', 'processing', '2026-01-01', '2026-01-01'), "
+                "('doc-done', 'Done', '/tmp/done.pdf', :hash, :hash, "
+                "'pdf', 'completed', '2026-01-01', '2026-01-01')"
+            ),
+            {"hash": "a" * 64},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO processing_jobs "
+                "(id, document_id, status, stage, progress, error_message, "
+                "created_at, updated_at) VALUES "
+                "('job-running', 'doc-running', 'running', 'ai_parse', 45, NULL, "
+                "'2026-01-01', '2026-01-01'), "
+                "('job-queued', 'doc-new', 'queued', 'queued', 0, NULL, "
+                "'2026-01-01', '2026-01-01'), "
+                "('job-done', 'doc-done', 'completed', 'completed', 100, NULL, "
+                "'2026-01-01', '2026-01-01')"
+            )
+        )
+    engine.dispose()
+
+    factory = create_session_factory(settings)
+
+    with factory() as session:
+        jobs = session.execute(
+            text(
+                "SELECT id, status, stage, progress, error_message, completed_blocks, "
+                "total_blocks, cancel_requested, provider, model, source_content_hash "
+                "FROM processing_jobs ORDER BY id"
+            )
+        ).all()
+        documents = dict(
+            session.execute(text("SELECT id, status FROM documents")).all()
+        )
+        indexes = {
+            row[1]
+            for row in session.execute(
+                text("PRAGMA index_list('processing_jobs')")
+            ).all()
+        }
+
+    assert [row[:3] for row in jobs] == [
+        ("job-done", "completed", "completed"),
+        ("job-queued", "interrupted", "interrupted"),
+        ("job-running", "interrupted", "interrupted"),
+    ]
+    assert jobs[0][3:] == (100.0, None, None, None, 0, None, None, None)
+    assert all("Retry" in row[4] for row in jobs[1:])
+    assert documents == {
+        "doc-running": "completed",
+        "doc-new": "discovered",
+        "doc-done": "completed",
+    }
+    assert "ix_processing_jobs_active_document" in indexes
