@@ -23,6 +23,8 @@ from glyph.research_jobs import (
     recover_interrupted_jobs,
 )
 from glyph.research_routes import router as research_router
+from glyph.summary_jobs import SummaryJobExecutor, mark_interrupted_summary_jobs
+from glyph.summary_routes import router as summary_router
 
 
 def create_app() -> FastAPI:
@@ -34,7 +36,9 @@ def create_app() -> FastAPI:
     # their in-memory credentials; surface them as interrupted, never replay them.
     with session_factory.begin() as session:
         mark_interrupted_jobs(session, settings)
+        mark_interrupted_summary_jobs(session)
     processing_executor = ProcessingJobExecutor(session_factory, settings)
+    summary_executor = SummaryJobExecutor(session_factory, settings)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -62,6 +66,7 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            summary_executor.shutdown()
             processing_executor.shutdown()
             contract_executor.shutdown()
             research_executor.shutdown()
@@ -70,7 +75,9 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     app.state.session_factory = session_factory
     app.state.processing_job_executor = processing_executor
+    app.state.summary_job_executor = summary_executor
     app.include_router(documents_router)
+    app.include_router(summary_router)
     app.include_router(research_router)
     app.include_router(contract_router)
     app.include_router(provider_settings_router)

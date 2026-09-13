@@ -16,6 +16,7 @@ from glyph.models import (
     ResearchEvidence,
     Section,
     Summary,
+    SummaryEvidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,14 @@ def clear_document_outputs(session: Session, document_id: str) -> None:
         .join(Block, ImplementationContractEvidence.block_id == Block.id)
         .where(Block.document_id == document_id)
     )
-    cited_block_ids = research_cited_block_ids.union(contract_cited_block_ids)
+    summary_cited_block_ids = (
+        select(SummaryEvidence.block_id)
+        .join(Block, SummaryEvidence.block_id == Block.id)
+        .where(Block.document_id == document_id)
+    )
+    cited_block_ids = research_cited_block_ids.union(
+        contract_cited_block_ids, summary_cited_block_ids
+    )
     session.execute(
         update(Block)
         .where(Block.document_id == document_id, Block.id.in_(cited_block_ids))

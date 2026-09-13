@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getDocumentSummaries,
+  generateDocumentSummaries,
   getProcessingPreflight,
   listProcessingJobs,
   cancelProcessingJob,
@@ -35,6 +37,26 @@ import {
   implementationContractSummary,
   implementationContractVersion
 } from './implementationContractTestData'
+
+describe('document summary contract', () => {
+  it('loads state and explicitly starts generation', async () => {
+    const state = { status: 'not_generated', provider: 'claude_cli', model: null, version: null, job: null }
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify(state)))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getDocumentSummaries('d1')).resolves.toEqual(state)
+    await expect(generateDocumentSummaries('d1')).resolves.toEqual(state)
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/documents/d1/summaries', { method: 'POST' })
+  })
+
+  it('rejects claims that have no evidence', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      status: 'available', provider: 'mock', model: null, job: null,
+      version: { id: 'v', source_content_hash: 'a'.repeat(64), reader_fingerprint: 'b'.repeat(64),
+        provider: 'mock', model: null, created_at: '2026-09-13', claims: [{ id: 'c', section_path: null, text: 'Unsupported.', evidence: [] }] }
+    }))))
+    await expect(getDocumentSummaries('d1')).rejects.toThrow()
+  })
+})
 
 const evidence = {
   id: 'evidence-1',

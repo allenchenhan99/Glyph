@@ -17,6 +17,7 @@ Glyph is currently pre-1.0. It is designed for a trusted single user on one mach
 | --- | --- |
 | **Import** | Upload a PDF or document image, or discover files in `book/`. Sources and processing artifacts stay in your local workspace. |
 | **Read** | Aligned original and Traditional Chinese text, paired hover states, accessible formulas, and links to source pages. |
+| **Summarize** | Explicitly generate document and section drafts with exact source quotations, version checks, and keyboard navigation back to evidence. |
 | **Map the research** | Versioned Research Maps connect the research question, data, signal, method, findings, and limitations to exact evidence. |
 | **Review the claims** | A five-step review lets you confirm, question, or correct claims while preserving the original AI draft. |
 | **Define the implementation** | Build a typed Implementation Contract from an explicit Map version, review six steps, compare revisions, and export JSON or Markdown. |
@@ -27,7 +28,7 @@ Processing checks local readiness before enqueueing a persistent background job,
 
 The [product roadmap](docs/plans/2026-09-13-product-roadmap.md) tracks phased improvements and their acceptance criteria.
 
-**Current limits:** Glyph is pre-1.0 and intended for a trusted single user. Section and document summaries are deterministic placeholders. Scanned documents require a separately configured OCR adapter. Research Maps and Implementation Contracts use the configured CLI provider; OrcaRouter currently supports document translation only.
+**Current limits:** Glyph is pre-1.0 and intended for a trusted single user. Summary claims are AI drafts: exact quotation checks establish citation integrity, not the correctness of a model's interpretation. Scanned documents require a separately configured OCR adapter. Summaries, Research Maps and Implementation Contracts use the configured research provider; OrcaRouter currently supports document translation only. Mock mode is labeled development output, not real model evaluation.
 
 ## Requirements
 
@@ -84,11 +85,13 @@ Open `http://127.0.0.1:5173`, place a document in `book/` or upload one, then se
 
 Process first checks document and provider readiness, then shows queued/running progress. Refreshing the browser restores job state. Cancel stops work at a safe boundary; an in-flight external call may finish first. After a backend restart, unfinished work is marked interrupted and can be retried with current settings and compatible cached batches. See the [processing guide](docs/document-processing.md) for recovery and API details.
 
+In **Full Reader**, choose **Generate summary** to request an evidence-linked overview and section claims. Expand a claim to inspect its exact quotation and jump to the source block. Failed attempts retain the previous version; changed Reader content makes it stale. Summary generation is explicit and uses a persistent job. See the [summary guide](docs/evidence-linked-summaries.md) for provider configuration and validation limits.
+
 Uploaded files are stored under `data/uploads/` with internal UUID names while their original display names remain in the catalog. A changed source is marked **stale** and keeps its last-good reader available until reprocessing succeeds. A removed source is marked **missing**; stored text remains readable, but processing and page rendering are blocked until the source returns.
 
 ## Translation providers
 
-Open **Translation settings** in the workspace to choose Claude Code, Codex CLI, or OrcaRouter. Changes apply to new document-processing runs. Research Maps and Implementation Contracts continue to use `GLYPH_AI_MODE` from your environment.
+Open **Translation settings** in the workspace to choose Claude Code, Codex CLI, or OrcaRouter. Changes apply to new document-processing runs. Summaries, Research Maps and Implementation Contracts continue to use `GLYPH_AI_MODE` from your environment.
 
 For OrcaRouter:
 

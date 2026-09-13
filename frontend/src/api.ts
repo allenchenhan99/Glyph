@@ -5,6 +5,7 @@ import type {
   ContractResolutionInput,
   DocumentRecord,
   DocumentStatus,
+  DocumentSummaries,
   EvidenceLocatorType,
   EvidenceQuality,
   EvidenceRelation,
@@ -52,6 +53,35 @@ export class ApiError extends Error {
 
 export async function listDocuments(): Promise<DocumentRecord[]> {
   return fetchJson('/api/documents', isDocumentArray)
+}
+
+export function getDocumentSummaries(documentId: string): Promise<DocumentSummaries> {
+  return fetchJson(`/api/documents/${documentId}/summaries`, isDocumentSummaries)
+}
+
+export function generateDocumentSummaries(documentId: string): Promise<DocumentSummaries> {
+  return fetchJson(`/api/documents/${documentId}/summaries`, isDocumentSummaries, { method: 'POST' })
+}
+
+function isDocumentSummaries(value: unknown): value is DocumentSummaries {
+  if (!isRecord(value) || !isString(value.status) ||
+    !['not_generated', 'generating', 'available', 'stale', 'failed'].includes(value.status) ||
+    !isString(value.provider) || !isNullableString(value.model)) return false
+  const job = value.job
+  if (job !== null && (!isRecord(job) || !isString(job.id) || !isString(job.status) ||
+    !['queued', 'running', 'completed', 'failed', 'interrupted'].includes(job.status) ||
+    !isNullableString(job.error_message))) return false
+  const version = value.version
+  if (version === null) return true
+  return isRecord(version) && isString(version.id) && isString(version.source_content_hash) &&
+    isString(version.reader_fingerprint) && isString(version.provider) && isNullableString(version.model) &&
+    isString(version.created_at) && Array.isArray(version.claims) && version.claims.length > 0 &&
+    version.claims.every(claim => isRecord(claim) && isString(claim.id) && isNullableString(claim.section_path) &&
+      isString(claim.text) && claim.text.trim().length > 0 && Array.isArray(claim.evidence) &&
+      claim.evidence.length > 0 && claim.evidence.every(anchor => isRecord(anchor) &&
+        isString(anchor.block_id) && isString(anchor.quote_text) && anchor.quote_text.trim().length > 0 &&
+        isInteger(anchor.quote_start) && anchor.quote_start >= 0 && isInteger(anchor.quote_end) &&
+        anchor.quote_end > anchor.quote_start && isInteger(anchor.page_number) && anchor.page_number > 0))
 }
 
 export async function uploadDocument(file: File): Promise<DocumentRecord> {

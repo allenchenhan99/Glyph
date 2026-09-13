@@ -231,13 +231,17 @@ export function App() {
   }
 
   async function handleMapEvidence(blockId: string) {
-    if (!activeDocument) return
+    if (!activeDocument || !mapState.map) return
+    const documentId = activeDocument.id
     try {
-      setReader(await getReader(activeDocument.id))
+      const payload = await getReader(documentId, mapState.map.source_content_hash)
+      if (activeDocumentId.current !== documentId) return
+      setReader(payload)
       dispatchMap({ type: 'openReader', blockId })
       setReaderReturnSurface('map')
       setSurface('reader')
     } catch (error) {
+      if (activeDocumentId.current !== documentId) return
       console.error(error)
       dispatchMap({
         type: 'mapFailed',

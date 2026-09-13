@@ -323,7 +323,7 @@ def test_contract_migration_preserves_reader_and_research_map(tmp_path):
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
     assert counts == dict.fromkeys(CONTRACT_TABLES, 0)
-    assert revision == "0006_processing_job_reliability"
+    assert revision == "0007_document_summaries"
 
 
 def test_contract_migration_declares_expected_foreign_keys(tmp_path):
@@ -461,7 +461,7 @@ def test_contract_job_map_selection_migration_preserves_existing_jobs(tmp_path):
         "2026-01-01",
         "2026-01-01",
     )
-    assert revision == "0006_processing_job_reliability"
+    assert revision == "0007_document_summaries"
 
 
 def test_contract_models_expose_domain_relationships():
@@ -666,7 +666,7 @@ def test_research_map_migration_preserves_reader_and_invents_no_map_rows(tmp_pat
     )
     assert map_row_counts == dict.fromkeys(RESEARCH_MAP_TABLES, 0)
     assert block_source_hash == "legacy-hash"
-    assert revision == "0006_processing_job_reliability"
+    assert revision == "0007_document_summaries"
 
 
 def test_completed_legacy_document_backfills_processed_hash(tmp_path):
@@ -780,3 +780,66 @@ def test_processing_job_migration_interrupts_unfinished_work_and_keeps_history(
         "doc-done": "completed",
     }
     assert "ix_processing_jobs_active_document" in indexes
+
+
+def test_summary_migration_adds_tables_and_preserves_existing_rows(tmp_path):
+    settings = make_settings(tmp_path)
+    create_unmigrated_engine(settings).dispose()
+    command.upgrade(
+        alembic_config(settings.database_url), "0006_processing_job_reliability"
+    )
+    engine = create_engine(settings.database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO documents "
+                "(id, title, source_path, content_hash, processed_content_hash, "
+                "file_type, status, created_at, updated_at) VALUES "
+                "('doc-1', 'Paper', '/tmp/paper.pdf', :hash, :hash, "
+                "'pdf', 'completed', '2026-01-01', '2026-01-01')"
+            ),
+            {"hash": "a" * 64},
+        )
+        connection.execute(
+            text(
+                "INSERT INTO summaries (id, document_id, section_id, summary_text, "
+                "created_at) VALUES ('legacy', 'doc-1', NULL, 'legacy placeholder', "
+                "'2026-01-01')"
+            )
+        )
+    engine.dispose()
+
+    factory = create_session_factory(settings)
+
+    with factory() as session:
+        legacy = session.execute(
+            text("SELECT summary_text FROM summaries WHERE id = 'legacy'")
+        ).scalar_one()
+        tables = {
+            row[0]
+            for row in session.execute(
+                text("SELECT name FROM sqlite_master WHERE type = 'table'")
+            ).all()
+        }
+        indexes = {
+            row[1]
+            for row in session.execute(text("PRAGMA index_list('summary_jobs')")).all()
+        } | {
+            row[1]
+            for row in session.execute(
+                text("PRAGMA index_list('summary_versions')")
+            ).all()
+        }
+        revision = session.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+
+    assert legacy == "legacy placeholder"
+    assert {
+        "summary_versions",
+        "summary_claims",
+        "summary_evidence",
+        "summary_jobs",
+    } <= tables
+    assert {"uq_summary_active_version", "uq_summary_active_job"} <= indexes
+    assert revision == "0007_document_summaries"

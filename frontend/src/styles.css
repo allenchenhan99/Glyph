@@ -2177,3 +2177,14 @@ h1 {
 .processing-progress p, .processing-result, .processing-warning { margin: 8px 0 0; font-size: 0.85rem; line-height: 1.5; }
 .processing-warning { color: var(--warning); }
 .document-processing .error-line { margin: 8px 0 0; font-size: 0.85rem; }
+.summary-panel { border-bottom: 1px solid #65756d; padding: 0 18px 1rem; margin-bottom: 1rem; overflow-wrap: anywhere; }
+.summary-panel p { line-height: 1.5; }
+.summary-panel .summary-provider { font-size: .72rem; color: #cad4ce; }
+.summary-panel .summary-notice { font-size: .78rem; padding: .6rem; background: #f4eee3; color: #23332e; border-radius: .35rem; }
+.summary-claim-group h3 { font-size: .83rem; margin: 1rem 0 .5rem; }
+.summary-claim { border-top: 1px solid var(--line, #ded8cd); padding: .6rem 0; font-size: .82rem; }
+.summary-claim > summary { cursor: pointer; line-height: 1.5; }
+.summary-claim > summary:focus-visible { outline: 2px solid #a05036; outline-offset: 3px; }
+.summary-evidence blockquote { margin: .65rem 0; padding-left: .65rem; border-left: 2px solid #b87957; font-size: .78rem; line-height: 1.55; }
+.summary-panel .text-button { text-align: left; white-space: normal; color: #edcb95; }
+.summary-generate { margin-top: .75rem; }

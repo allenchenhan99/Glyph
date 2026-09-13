@@ -77,6 +77,39 @@ export type ReaderPayload = {
   summary: string
 }
 
+export type SummaryEvidence = {
+  block_id: string
+  quote_text: string
+  quote_start: number
+  quote_end: number
+  page_number: number
+}
+
+export type SummaryClaim = {
+  id: string
+  section_path: string | null
+  text: string
+  evidence: SummaryEvidence[]
+}
+
+export type SummaryVersion = {
+  id: string
+  source_content_hash: string
+  reader_fingerprint: string
+  provider: string
+  model: string | null
+  created_at: string
+  claims: SummaryClaim[]
+}
+
+export type DocumentSummaries = {
+  status: 'not_generated' | 'generating' | 'available' | 'stale' | 'failed'
+  provider: string
+  model: string | null
+  version: SummaryVersion | null
+  job: { id: string; status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted'; error_message: string | null } | null
+}
+
 export type ResearchNodeType =
   | 'research_question'
   | 'author_claim'
