@@ -1,8 +1,14 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getDocumentSummaries } from './api'
 
 import { Reader } from './Reader'
 import type { ReaderPayload } from './types'
+
+vi.mock('./api', () => ({ getDocumentSummaries: vi.fn(), generateDocumentSummaries: vi.fn() }))
+beforeEach(() => {
+  vi.mocked(getDocumentSummaries).mockResolvedValue({ status: 'not_generated', provider: 'mock', model: null, version: null, job: null })
+})
 
 const payload: ReaderPayload = {
   document: {
@@ -75,13 +81,31 @@ const payload: ReaderPayload = {
 }
 
 describe('Reader', () => {
+  it('focuses and highlights the exact block selected from a summary citation', async () => {
+    vi.mocked(getDocumentSummaries).mockResolvedValue({
+      status: 'available', provider: 'claude_cli', model: null, job: null,
+      version: { id: 'v1', source_content_hash: 'a'.repeat(64), reader_fingerprint: 'b'.repeat(64),
+        provider: 'claude_cli', model: null, created_at: '2026-09-13', claims: [
+          { id: 'c1', section_path: null, text: 'Returns are uncertain.', evidence: [
+            { block_id: 'block-2', quote_text: 'Expected return is uncertain.', quote_start: 0, quote_end: 29, page_number: 1 }
+          ] }
+        ] }
+    })
+    render(<Reader payload={payload} />)
+    fireEvent.click(await screen.findByText('Returns are uncertain.'))
+    fireEvent.click(screen.getByRole('button', { name: 'Go to source page 1' }))
+    expect(screen.getByTestId('reader-row-block-2')).toHaveFocus()
+    expect(screen.getByTestId('reader-row-block-2')).toHaveAttribute('data-focused', 'true')
+  })
+
   it('renders aligned source and translation rows with synchronized hover', () => {
     render(<Reader payload={payload} />)
 
     const row = screen.getByTestId('reader-row-block-2')
     expect(within(row).getByText('Expected return is uncertain.')).toBeInTheDocument()
     expect(within(row).getByText('繁中翻譯：Expected return is uncertain.')).toBeInTheDocument()
-    expect(screen.getByText('Introduction 的重點摘要。')).toBeInTheDocument()
+    expect(screen.queryByText('Introduction 的重點摘要。')).not.toBeInTheDocument()
+    expect(screen.queryByText(payload.summary)).not.toBeInTheDocument()
 
     fireEvent.mouseEnter(row)
 

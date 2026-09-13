@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState } from 'react'
 import 'katex/dist/katex.min.css'
 
 import type { ReaderBlock, ReaderPayload } from './types'
+import { SummaryPanel } from './SummaryPanel'
 
 type ReaderProps = {
   payload: ReaderPayload
@@ -33,6 +34,8 @@ export function Reader({
   citationSource
 }: ReaderProps) {
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null)
+  const [summaryFocus, setSummaryFocus] = useState<string | null>(null)
+  const effectiveFocus = summaryFocus ?? focusBlockId
   const returnAction = onReturn ?? onReturnToMap
 
   const firstBlockBySectionPath = useMemo(() => {
@@ -50,6 +53,15 @@ export function Reader({
     document.getElementById(`block-${focusBlockId}`)?.focus({ preventScroll: true })
   }, [focusBlockId, payload.document.id])
 
+  useEffect(() => { setSummaryFocus(null) }, [focusBlockId, payload.document.id])
+
+  function navigateToSummaryEvidence(blockId: string) {
+    setSummaryFocus(blockId)
+    const target = document.getElementById(`block-${blockId}`)
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView?.({ block: 'center', behavior: 'auto' })
+  }
+
   return (
     <section className="reader-shell" aria-label={`Reader for ${payload.document.title}`}>
       <aside className="section-rail" aria-label="Sections">
@@ -57,16 +69,12 @@ export function Reader({
           <ListTree aria-hidden="true" size={18} />
           <span>Sections</span>
         </div>
-        <div className="summary-block">
-          <p className="kicker">Overview</p>
-          <p>{payload.summary}</p>
-        </div>
+        <SummaryPanel documentId={payload.document.id} blockIds={payload.blocks.map(block => block.id)} onNavigate={navigateToSummaryEvidence} canGenerate={!returnAction} />
         <nav className="section-list">
           {payload.sections.map((section) => (
             <a href={`#block-${firstBlockBySectionPath.get(section.path) ?? section.id}`} key={section.id}>
               <span title={section.title}>{compactText(section.title, 52)}</span>
               <span className="progress-pill">{Math.round(section.progress)}%</span>
-              <small>{compactText(section.summary, 92)}</small>
             </a>
           ))}
         </nav>
@@ -107,7 +115,7 @@ export function Reader({
             <ReaderRow
               block={block}
               hovered={hoveredBlockId === block.id}
-              focused={focusBlockId === block.id}
+              focused={effectiveFocus === block.id}
               citingNodes={focusBlockId === block.id ? citingNodes : []}
               citationSource={citationSource}
               key={block.id}

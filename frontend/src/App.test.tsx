@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import {
   ApiError,
+  getDocumentSummaries,
   getProcessingPreflight,
   listProcessingJobs,
   getAiSettings,
@@ -37,6 +38,7 @@ vi.mock('./api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api')>()
   return {
     ...actual,
+    getDocumentSummaries: vi.fn(),
     getProcessingPreflight: vi.fn(),
     listProcessingJobs: vi.fn(),
     getAiSettings: vi.fn(),
@@ -113,6 +115,7 @@ const readerPayload: ReaderPayload = {
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getDocumentSummaries).mockResolvedValue({ status: 'not_generated', provider: 'mock', model: null, version: null, job: null })
     vi.mocked(listProcessingJobs).mockResolvedValue([])
     vi.mocked(getProcessingPreflight).mockResolvedValue({
       ready: true, provider: 'mock', source_type: 'text_pdf', page_count: 1, issues: []
