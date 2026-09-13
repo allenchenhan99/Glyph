@@ -59,6 +59,12 @@ class Document(Base):
     summaries: Mapped[list[Summary]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
+    summary_versions: Mapped[list[SummaryVersion]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    summary_jobs: Mapped[list[SummaryJob]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
     research_map_versions: Mapped[list[ResearchMapVersion]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
     )
@@ -159,6 +165,9 @@ class Block(Base):
     implementation_contract_evidence: Mapped[list[ImplementationContractEvidence]] = (
         relationship(back_populates="block")
     )
+    summary_evidence: Mapped[list[SummaryEvidence]] = relationship(
+        back_populates="block"
+    )
 
 
 class Summary(Base):
@@ -173,6 +182,114 @@ class Summary(Base):
     )
 
     document: Mapped[Document] = relationship(back_populates="summaries")
+
+
+class SummaryVersion(Base):
+    """Immutable, evidence-linked document/section summary publication."""
+
+    __tablename__ = "summary_versions"
+    __table_args__ = (
+        Index("ix_summary_versions_document_id", "document_id"),
+        Index(
+            "uq_summary_active_version",
+            "document_id",
+            unique=True,
+            sqlite_where=text("is_active = 1"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False)
+    previous_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("summary_versions.id")
+    )
+    source_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    reader_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_name: Mapped[str | None] = mapped_column(String(200))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+
+    document: Mapped[Document] = relationship(back_populates="summary_versions")
+    claims: Mapped[list[SummaryClaim]] = relationship(
+        back_populates="version",
+        cascade="all, delete-orphan",
+        order_by="SummaryClaim.display_order",
+    )
+    jobs: Mapped[list[SummaryJob]] = relationship(back_populates="version")
+
+
+class SummaryClaim(Base):
+    __tablename__ = "summary_claims"
+    __table_args__ = (Index("ix_summary_claims_version_id", "version_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    version_id: Mapped[str] = mapped_column(
+        ForeignKey("summary_versions.id"), nullable=False
+    )
+    section_path: Mapped[str | None] = mapped_column(String(2048))
+    display_order: Mapped[int] = mapped_column(Integer, nullable=False)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    version: Mapped[SummaryVersion] = relationship(back_populates="claims")
+    evidence: Mapped[list[SummaryEvidence]] = relationship(
+        back_populates="claim",
+        cascade="all, delete-orphan",
+        order_by="SummaryEvidence.quote_start",
+    )
+
+
+class SummaryEvidence(Base):
+    __tablename__ = "summary_evidence"
+    __table_args__ = (
+        UniqueConstraint("claim_id", "block_id", "quote_start", "quote_end"),
+        Index("ix_summary_evidence_block_id", "block_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    claim_id: Mapped[str] = mapped_column(
+        ForeignKey("summary_claims.id"), nullable=False
+    )
+    block_id: Mapped[str] = mapped_column(ForeignKey("blocks.id"), nullable=False)
+    quote_text: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    quote_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_quote_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    claim: Mapped[SummaryClaim] = relationship(back_populates="evidence")
+    block: Mapped[Block] = relationship(back_populates="summary_evidence")
+
+
+class SummaryJob(Base):
+    __tablename__ = "summary_jobs"
+    __table_args__ = (
+        Index("ix_summary_jobs_document_status", "document_id", "status"),
+        Index(
+            "uq_summary_active_job",
+            "document_id",
+            unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), nullable=False)
+    version_id: Mapped[str | None] = mapped_column(ForeignKey("summary_versions.id"))
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), nullable=False)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+
+    document: Mapped[Document] = relationship(back_populates="summary_jobs")
+    version: Mapped[SummaryVersion | None] = relationship(back_populates="jobs")
 
 
 class ResearchMapVersion(Base):

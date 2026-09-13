@@ -18,12 +18,14 @@ Validation on 2026-09-13: 457 backend tests passed (91.27% coverage), 142 fronte
 
 The local historical desktop database has a different, unsupported schema and was not migrated or modified. This stage verifies the supported public schema migration only. First-use guidance must explain recovery for unsupported databases without overwriting them.
 
-## Stage 2 — Evidence-linked summaries (in progress: design)
+## Stage 2 — Evidence-linked summaries (implemented; integration pending)
 
 - Replace deterministic summary placeholders with structured document/section summaries linked to exact source blocks.
 - Validate evidence coverage and source revision before publication; unsupported claims cannot appear as verified findings.
 - Distinguish not generated, generating, available, stale and failed summaries; failure preserves a previous usable version.
 - Acceptance: supported/unsupported evidence fixtures, provider failure and source-change tests, Reader navigation to evidence.
+
+Validation on 2026-09-13: 505 backend tests passed (91.63% coverage), including evidence rejection, migration preservation, source/Reader change checks, durable job recovery, and bounded CLI stage validation/cache eviction. Frontend: 154 tests passed, including historical Map source selection and exact-block focus. Browser checks with an isolated generated PDF and delayed mock verified reload during generation, keyboard quote expansion/source focus, failure retaining a prior version, successful retry, and identical-file reprocessing marking summaries stale without duplicate Reader rows. The dark summary rail was visually checked and contrast corrected. These tests establish workflow and citation integrity, not live-model semantic quality.
 
 ## Stage 3 — First-use guidance (planned)
 

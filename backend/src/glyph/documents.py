@@ -255,7 +255,8 @@ def section_to_out(
         title=section.title,
         path=section.path,
         order_index=section.order_index,
-        summary=section.summary,
+        # Deterministic legacy strings are not summaries; see /summaries.
+        summary="",
         progress=progress,
     )
 
@@ -265,6 +266,14 @@ def load_reader_parts(
     document_id: str,
     source_content_hash: str | None = None,
 ):
+    """Load Reader rows.
+
+    The default Reader shows only blocks attached to a current section, so
+    citations retained from an identical-file reprocessing never appear as
+    duplicate rows. An explicit historical ``source_content_hash`` request keeps
+    every block with that hash, which is what Research Map and Contract
+    evidence links navigate to.
+    """
     document = session.get(Document, document_id)
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -275,14 +284,15 @@ def load_reader_parts(
     ).all()
     section_by_id = {section.id: section for section in sections}
     snapshot_hash = source_content_hash or document.processed_content_hash
-    blocks = session.scalars(
-        select(Block)
-        .where(
-            Block.document_id == document_id,
-            Block.source_content_hash == snapshot_hash,
-        )
-        .order_by(Block.order_index)
-    ).all()
+    block_query = select(Block).where(
+        Block.document_id == document_id,
+        Block.source_content_hash == snapshot_hash,
+    )
+    blocks = session.scalars(block_query.order_by(Block.order_index, Block.id)).all()
+    if source_content_hash is None and any(b.section_id is not None for b in blocks):
+        # Blocks detached by clear_document_outputs are retained citations from
+        # an identical-file reprocessing, not rows of the current Reader.
+        blocks = [block for block in blocks if block.section_id is not None]
     summary = session.scalar(
         select(Summary)
         .where(Summary.document_id == document_id, Summary.section_id.is_(None))
@@ -496,7 +506,7 @@ def get_reader(
             )
             for section in sections
         ],
-        summary=summary.summary_text if summary is not None else "",
+        summary="",
     )
 
 
@@ -521,8 +531,9 @@ def get_summary(
     document_id: str,
     session: Annotated[Session, Depends(get_session)],
 ) -> dict[str, str]:
-    _, _, _, _, summary = load_reader_parts(session, document_id)
-    return {"summary": summary.summary_text if summary is not None else ""}
+    load_reader_parts(session, document_id)
+    # Legacy placeholder rows stay stored but are no longer presented as summaries.
+    return {"summary": ""}
 
 
 @router.get("/documents/{document_id}/pages/{page_number}/image")

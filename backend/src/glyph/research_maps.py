@@ -210,7 +210,7 @@ class ResearchMapService:
         return require_current_reader(self._session, document_id)
 
     def _current_blocks(self, document: Document) -> Sequence[Block]:
-        return self._session.scalars(
+        blocks = self._session.scalars(
             select(Block)
             .where(
                 Block.document_id == document.id,
@@ -218,6 +218,11 @@ class ResearchMapService:
             )
             .order_by(Block.order_index, Block.id)
         ).all()
+        if any(block.section_id is not None for block in blocks):
+            # Detached same-hash rows are citations retained by an identical-file
+            # reprocessing, never fresh inputs. Section-less fixtures keep working.
+            return [block for block in blocks if block.section_id is not None]
+        return blocks
 
     def _persist(
         self,

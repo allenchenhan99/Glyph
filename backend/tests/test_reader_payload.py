@@ -30,7 +30,7 @@ def test_reader_payload_returns_aligned_blocks_sections_and_summary(
     assert reader_response.status_code == 200
     reader = reader_response.json()
     assert reader["document"]["id"] == document_id
-    assert reader["summary"].startswith("Chapter One")
+    assert reader["summary"] == ""  # placeholders are no longer summaries
     assert reader["blocks"][0]["source_text"] == "Chapter One"
     assert reader["blocks"][0]["translated_text"] == "標題：Chapter One"
     assert reader["blocks"][0]["formula_latex"] is None
