@@ -14,6 +14,7 @@ import type {
   ImplementationContractJob,
   ImplementationContractVersion,
   ProcessingJob,
+  ProcessingPreflight,
   ReaderPayload,
   ResearchMap,
   ResearchMapDiff,
@@ -60,6 +61,28 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
     method: 'POST',
     body: form
   })
+}
+
+export function getProcessingPreflight(documentId: string): Promise<ProcessingPreflight> {
+  return fetchJson(`/api/documents/${documentId}/preflight`, isProcessingPreflight)
+}
+
+export function listProcessingJobs(): Promise<ProcessingJob[]> {
+  return fetchJson('/api/jobs', (value): value is ProcessingJob[] =>
+    Array.isArray(value) && value.every(isProcessingJob))
+}
+
+export function cancelProcessingJob(jobId: string): Promise<ProcessingJob> {
+  return fetchJson(`/api/jobs/${jobId}/cancel`, isProcessingJob, { method: 'POST' })
+}
+
+function isProcessingPreflight(value: unknown): value is ProcessingPreflight {
+  return isRecord(value) && isBoolean(value.ready) && isString(value.source_type) &&
+    isString(value.provider) && (value.page_count === null ||
+      (isInteger(value.page_count) && value.page_count >= 0)) &&
+    Array.isArray(value.issues) && value.issues.every(issue =>
+      isRecord(issue) && isString(issue.code) && isString(issue.message) &&
+      (issue.severity === 'error' || issue.severity === 'warning'))
 }
 
 export async function processDocument(documentId: string): Promise<ProcessingJob> {
@@ -370,7 +393,15 @@ function isProcessingJob(value: unknown): value is ProcessingJob {
     isString(value.document_id) &&
     isString(value.status) &&
     isString(value.stage) &&
-    isNumber(value.progress) &&
+    isNumber(value.progress) && value.progress >= 0 && value.progress <= 100 &&
+    ['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted'].includes(value.status) &&
+    (!('completed_blocks' in value) || value.completed_blocks === null ||
+      (isInteger(value.completed_blocks) && value.completed_blocks >= 0)) &&
+    (!('total_blocks' in value) || value.total_blocks === null ||
+      (isInteger(value.total_blocks) && value.total_blocks >= 0)) &&
+    (!('cancel_requested' in value) || isBoolean(value.cancel_requested)) &&
+    (!('provider' in value) || isNullableString(value.provider)) &&
+    (!('model' in value) || isNullableString(value.model)) &&
     isNullableString(value.error_message)
   )
 }

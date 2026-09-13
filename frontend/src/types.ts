@@ -26,6 +26,14 @@ export type ResearchMapSummary = {
   issue_count: number
 }
 
+export type ProcessingPreflight = {
+  ready: boolean
+  source_type: string
+  provider: string
+  page_count: number | null
+  issues: { code: string; severity: 'error' | 'warning'; message: string }[]
+}
+
 export type ProcessingJob = {
   id: string
   document_id: string
@@ -33,6 +41,11 @@ export type ProcessingJob = {
   stage: string
   progress: number
   error_message: string | null
+  completed_blocks?: number | null
+  total_blocks?: number | null
+  cancel_requested?: boolean
+  provider?: string | null
+  model?: string | null
 }
 
 export type ReaderBlock = {

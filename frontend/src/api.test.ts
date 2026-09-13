@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   ApiError,
+  getProcessingPreflight,
+  listProcessingJobs,
+  cancelProcessingJob,
   getAiSettings,
   updateAiSettings,
   activateImplementationContract,
@@ -755,5 +758,34 @@ describe('translation settings', () => {
       provider: 'unknown', model: '', has_api_key: false, ocr_mode: 'mock'
     }))))
     await expect(getAiSettings()).rejects.toThrow('Unexpected API response shape')
+  })
+})
+
+
+describe('document processing endpoints', () => {
+  it('accepts preflight and persistent job states', async () => {
+    const preflight = { ready: false, source_type: 'image', provider: 'mock', page_count: 1,
+      issues: [{ code: 'ocr_required', severity: 'error', message: 'Configure OCR.' }] }
+    const job = { id: 'job-1', document_id: 'doc-1', status: 'running', stage: 'translation',
+      progress: 42, completed_blocks: 4, total_blocks: 10, cancel_requested: false,
+      error_message: null }
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(preflight)))
+      .mockResolvedValueOnce(new Response(JSON.stringify([job])))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...job, cancel_requested: true })))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(getProcessingPreflight('doc-1')).resolves.toEqual(preflight)
+    await expect(listProcessingJobs()).resolves.toEqual([job])
+    await expect(cancelProcessingJob('job-1')).resolves.toMatchObject({ cancel_requested: true })
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/jobs/job-1/cancel', { method: 'POST' })
+  })
+
+  it('rejects invalid progress and malformed preflight issues', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([
+      { id: 'job-1', document_id: 'doc-1', status: 'running', stage: 'translation', progress: 200,
+        error_message: null }
+    ]))).mockResolvedValueOnce(new Response(JSON.stringify({ ready: true, source_type: 'image',
+      provider: 'mock', page_count: null, issues: [{ severity: 'success' }] }))))
+    await expect(listProcessingJobs()).rejects.toThrow('Unexpected API response shape')
+    await expect(getProcessingPreflight('doc-1')).rejects.toThrow('Unexpected API response shape')
   })
 })
